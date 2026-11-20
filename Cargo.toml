@@ -1,0 +1,29 @@
+[package]
+name = "cshell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "tokio", "tracing", "ws"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "tls12", "webpki-tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+ipnet = "2"
+percent-encoding = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+url = "2"
+
+[dev-dependencies]
+async-stream = "0.3"
+bytes = "1"
+reqwest = { version = "0.13", features = ["stream"] }
+tempfile = "3"
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", features = ["sink"] }

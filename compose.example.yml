@@ -1,0 +1,28 @@
+services:
+  cshell:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      SUB2API_UPSTREAM: ${SUB2API_UPSTREAM:?Set SUB2API_UPSTREAM in .env}
+    ports:
+      - "${CSHELL_HOST_BIND:-127.0.0.1}:${CSHELL_HOST_PORT:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - upstream
+
+networks:
+  upstream:
+    # Use the bridge Docker Compose creates by default. For an existing network
+    # shared with Sub2API, set CSHELL_NETWORK_EXTERNAL=true and CSHELL_NETWORK
+    # to that network's exact name; Sub2API must be reachable as "sub2api" there.
+    name: ${CSHELL_NETWORK:-cshell_default}
+    external: ${CSHELL_NETWORK_EXTERNAL:-false}
+
