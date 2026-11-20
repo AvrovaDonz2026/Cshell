@@ -104,7 +104,7 @@ async fn mock(request: Request) -> Response<Body> {
                 String::from_utf8_lossy(&body),
                 nominated,
                 conn.is_some(),
-                forwarded_for.map_or_default(|x| x.to_str().unwrap_or("").to_owned())
+                forwarded_for.map_or_else(String::new, |x| x.to_str().unwrap_or("").to_owned())
             ))
             .into_response();
             response
@@ -129,7 +129,7 @@ async fn mock(request: Request) -> Response<Body> {
             String::from_utf8_lossy(&body),
             nominated,
             conn.is_some(),
-            forwarded_for.map_or_default(|x| x.to_str().unwrap_or("").to_owned())
+            forwarded_for.map_or_else(String::new, |x| x.to_str().unwrap_or("").to_owned())
         ))
         .into_response(),
     }
