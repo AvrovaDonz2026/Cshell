@@ -66,4 +66,12 @@ OAuth 服务端回调通常是 `/api/v1/auth/oauth/<provider>/callback`；身份
 
 ## 许可证
 
-上游复制及改版的前端沿用 GNU LGPL v3 或后续版本。详见 [LICENSE](LICENSE) 与 [第三方声明](THIRD_PARTY_NOTICES.md)，其中列出上游归属与分发时提供对应源代码的要求。
+仓库中不同部分的许可证范围见下方 [许可证范围](#许可证范围)；上游归属与分发时提供对应源代码的要求见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## CI
+
+GitHub Actions runs on pushes to `main` and pull requests. It checks Rust formatting, Clippy, and tests with Rust 1.93.0; checks the frontend with Node.js 24 and pnpm 9.15.9; runs the proxy smoke test; and builds the Docker image without publishing it. The workflow is defined in `.github/workflows/ci.yml`.
+
+## 许可证范围
+
+仓库中 Donz 原创的 Rust 代理、构建配置和配套工具按 MIT 许可证发布，见 [LICENSE](LICENSE)；`Cargo.toml` 同样声明 MIT。`frontend/` 是基于 Sub2API 的修改版本，仍按 GNU LGPL v3 或后续版本发布，完整文本见 [frontend/LICENSE](frontend/LICENSE)，来源和修改说明见 [frontend/UPSTREAM.md](frontend/UPSTREAM.md)。第三方依赖和资源仍适用各自许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。

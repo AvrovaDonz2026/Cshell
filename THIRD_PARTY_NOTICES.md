@@ -5,7 +5,7 @@
 - 上游：<https://github.com/Wei-Shaw/sub2api>
 - 复制基线：[`2af3f1e15c98c893a89255a037f551046883b8c0`](https://github.com/Wei-Shaw/sub2api/tree/2af3f1e15c98c893a89255a037f551046883b8c0)
 - 上游 README 版权声明：Copyright (c) 2026 Wesley Liddick.
-- 上游 README 指定许可：GNU Lesser General Public License version 3 or later（`LGPL-3.0-or-later`）。[LICENSE](LICENSE) 包含 LGPL v3 原文及其引用的 GPL v3 原文。
+- 上游 README 指定许可：GNU Lesser General Public License version 3 or later（`LGPL-3.0-or-later`）。`frontend/LICENSE` 包含 LGPL v3 原文及其引用的 GPL v3 原文；仓库根目录的 `LICENSE` 是 Cshell 原创代理与配套工具适用的 MIT 许可证。
 
 Cshell 的 `frontend/` 从上述提交复制并修改。主要改动为界面视觉和布局，以及与 Cshell 静态资源和路由部署的集成；这是 Cshell 的修改版本，不代表上游发布或背书。复制的源文件和资源中的原有版权与许可声明仍适用。独立运行的 Sub2API 服务不打包进本项目的 Cshell 镜像。
 

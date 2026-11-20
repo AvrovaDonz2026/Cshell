@@ -23,7 +23,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=rust-builder /build/target/release/cshell /usr/local/bin/cshell
 COPY --from=frontend-builder /build/frontend/dist/ /app/frontend/dist/
-COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/cshell/
+COPY LICENSE frontend/LICENSE frontend/UPSTREAM.md THIRD_PARTY_NOTICES.md /usr/share/doc/cshell/
 
 ENV CSHELL_LISTEN=0.0.0.0:8080 \
     CSHELL_STATIC_DIR=/app/frontend/dist
