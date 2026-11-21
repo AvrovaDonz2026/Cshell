@@ -1,8 +1,10 @@
 # Cshell
 
-Cshell 是部署在 [Sub2API](https://github.com/Wei-Shaw/sub2api) 前面的 Rust 反向代理和 Vue 用户界面。本项目以固定提交 [`2af3f1e`](https://github.com/Wei-Shaw/sub2api/tree/2af3f1e15c98c893a89255a037f551046883b8c0) 为兼容基线：用户界面从上游 Vue 源码改版，继续使用原有 API 和登录、订阅、订单等业务逻辑。用户、权限、余额、支付、会话和持久化数据均由 Sub2API 管理；Cshell 不需要数据库、Redis 或独立账号。
+Cshell 是部署在 [Sub2API](https://github.com/Wei-Shaw/sub2api) 前面的 Rust 反向代理与独立 Vue 用户界面。兼容基线仍为固定提交 [`2af3f1e`](https://github.com/Wei-Shaw/sub2api/tree/2af3f1e15c98c893a89255a037f551046883b8c0)：`web/` 是为本项目编写的原创用户 SPA，通过同源 `/api/v1` 调用独立部署的 Sub2API；用户、权限、余额、支付、会话和持久化数据均由 Sub2API 管理，Cshell 不需要数据库、Redis 或独立账号。
 
 Cshell 只在明确允许的页面路径返回新版界面，构建资源位于 `/_cshell/`。原版管理后台 `/admin`、初始化向导 `/setup`、API、模型网关及其他路径均交给固定的 Sub2API 实例处理。上游需要提供原版内嵌前端，才能访问原版管理后台和初始化向导。
+
+API 形状与素材分类见 [docs/api-contracts.md](docs/api-contracts.md) 与 [docs/provenance.md](docs/provenance.md)。`web/` 的 npm 第三方依赖清单见 [web/docs/web-third-party.md](web/docs/web-third-party.md)。
 
 ## Docker Compose
 
@@ -24,25 +26,32 @@ curl -fsS http://127.0.0.1:8080/_cshell/ready
 
 ## 本地构建
 
-准备 Node.js 24、pnpm 9.15.9 和 Rust 1.93 或兼容更新版本。在仓库根目录执行：
+准备 Node.js 24、pnpm 10.11.0（与 `web/package.json` 的 `packageManager` 一致）和 Rust 1.93 或兼容更新版本。在仓库根目录执行：
 
 ```sh
 corepack enable
-corepack prepare pnpm@9.15.9 --activate
-pnpm --dir frontend install --frozen-lockfile
-pnpm --dir frontend run build
+corepack prepare pnpm@10.11.0 --activate
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web run build
 cargo build --release --locked --bin cshell
 SUB2API_UPSTREAM=http://127.0.0.1:8081 ./target/release/cshell
 ```
 
-将示例端口改为现有 Sub2API 的端口，然后访问 `http://127.0.0.1:8080/`。默认静态目录 `frontend/dist` 相对进程工作目录。Compose 会读取 `.env` 做变量替换；本地二进制请直接设置进程环境变量。
+将示例端口改为现有 Sub2API 的端口，然后访问 `http://127.0.0.1:8080/`。默认静态目录 `web/dist` 相对进程工作目录。Compose 会读取 `.env` 做变量替换；本地二进制请直接设置进程环境变量。
+
+独立 UI 本地 mock 预览（不启动 Rust / 真实 Sub2API）使用：
+
+```sh
+node scripts/cshell-web-preview.mjs start
+node scripts/cshell-web-preview.mjs status   # http://127.0.0.1:4284
+```
 
 ## 运行参数
 
 - `SUB2API_UPSTREAM`（必填）：固定上游 HTTP(S) origin，例如 `http://sub2api:8080`。不要附加路径、查询、片段或登录凭据。
 - `CSHELL_PUBLIC_URL`（可选）：浏览器访问的公开 origin，例如 `https://panel.example.com`。生产建议明确配置为对外 HTTPS 域名；不要附加路径。它不会替你在 Sub2API 或第三方平台登记回调。
 - `CSHELL_LISTEN`：监听地址，默认 `0.0.0.0:8080`。本机开发可改成 `127.0.0.1:8080`。
-- `CSHELL_STATIC_DIR`：新版前端目录，默认 `frontend/dist`；镜像内为 `/app/frontend/dist`。
+- `CSHELL_STATIC_DIR`：新版前端目录，默认 `web/dist`；镜像内为 `/app/web/dist`。
 - `CSHELL_CONNECT_TIMEOUT_SECS`：建立上游连接的超时，默认 `5`，允许 `1` 到 `300`。
 - `CSHELL_TRUSTED_PROXY_CIDRS`：可选的逗号分隔 IPv4/IPv6 CIDR，默认不信任任何入口；只有来自这些网段的入口才会被信任其转发头。
 
@@ -66,12 +75,12 @@ OAuth 服务端回调通常是 `/api/v1/auth/oauth/<provider>/callback`；身份
 
 ## 许可证
 
-仓库中不同部分的许可证范围见下方 [许可证范围](#许可证范围)；上游归属与分发时提供对应源代码的要求见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+仓库中不同部分的许可证范围见下方 [许可证范围](#许可证范围)；上游归属、历史分发与第三方依赖见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [HISTORY-LICENSE.md](HISTORY-LICENSE.md)。
 
 ## CI
 
-GitHub Actions runs on pushes to `main` and pull requests. It checks Rust formatting, Clippy, and tests with Rust 1.93.0; checks the frontend with Node.js 24 and pnpm 9.15.9; runs the proxy smoke test; and builds the Docker image without publishing it. The workflow is defined in `.github/workflows/ci.yml`.
+GitHub Actions runs on pushes to `main` and pull requests. It checks Rust formatting, Clippy, and tests with Rust 1.93.0; checks the independent `web/` frontend with Node.js 24 and pnpm 10.11.0; runs the proxy smoke test; and builds the Docker image without publishing it. The workflow is defined in `.github/workflows/ci.yml`.
 
 ## 许可证范围
 
-仓库中 Donz 原创的 Rust 代理、构建配置和配套工具按 MIT 许可证发布，见 [LICENSE](LICENSE)；`Cargo.toml` 同样声明 MIT。`frontend/` 是基于 Sub2API 的修改版本，仍按 GNU LGPL v3 或后续版本发布，完整文本见 [frontend/LICENSE](frontend/LICENSE)，来源和修改说明见 [frontend/UPSTREAM.md](frontend/UPSTREAM.md)。第三方依赖和资源仍适用各自许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+仓库中 Donz 原创材料——含 Rust 代理、构建配置、配套工具以及独立 `web/` 用户界面源码——按 MIT 许可证发布，见 [LICENSE](LICENSE)；`Cargo.toml` 与 `web/package.json` 同样声明 MIT。Sub2API 仍是独立部署的上游后端，不随本树作为修改后前端源码分发。历史上曾随发行附带的 LGPL 衍生 `frontend/` 已从当前工作树移除；git 历史与既往发行物不受改写，义务见 [HISTORY-LICENSE.md](HISTORY-LICENSE.md)。npm / crate 等第三方依赖仍适用各自许可证，见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [web/docs/web-third-party.md](web/docs/web-third-party.md)。素材分类见 [docs/provenance.md](docs/provenance.md)。

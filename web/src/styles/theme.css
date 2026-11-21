@@ -1,0 +1,50 @@
+/* Warm paper/sand light + warm charcoal dark.
+   Scoped to authenticated user workspace and portal body class only. */
+
+.cshell-user-workspace,
+body.cshell-user-portals {
+  --cshell-radius-window: 20px;
+  --cshell-radius-panel: 16px;
+  --cshell-radius-control: 10px;
+  --cshell-radius-badge: 6px;
+
+  --cshell-font-sans: "IBM Plex Sans", "Source Sans 3", "Segoe UI", sans-serif;
+  --cshell-font-mono: "IBM Plex Mono", "Source Code Pro", ui-monospace, monospace;
+
+  --cshell-bg: #f4efe6;
+  --cshell-bg-elevated: #faf6ef;
+  --cshell-surface: #fff9f0;
+  --cshell-surface-muted: #ebe3d6;
+  --cshell-border: #d9cbb8;
+  --cshell-text: #2c241c;
+  --cshell-text-muted: #6b5c4d;
+  --cshell-accent: #a95e45;
+  --cshell-accent-hover: #8f4d38;
+  --cshell-accent-soft: rgba(169, 94, 69, 0.14);
+  --cshell-danger: #9b3b2f;
+  --cshell-focus: #a95e45;
+  --cshell-shadow: 0 12px 32px rgba(44, 36, 28, 0.08);
+  --cshell-sidebar: #efe6d8;
+  --cshell-overlay: rgba(44, 36, 28, 0.42);
+}
+
+.cshell-user-workspace[data-theme='dark'],
+html[data-theme='dark'] .cshell-user-workspace,
+body.cshell-user-portals[data-theme='dark'],
+html[data-theme='dark'] body.cshell-user-portals {
+  --cshell-bg: #1c1814;
+  --cshell-bg-elevated: #26201a;
+  --cshell-surface: #2e261f;
+  --cshell-surface-muted: #3a3128;
+  --cshell-border: #4a3f34;
+  --cshell-text: #f3e8da;
+  --cshell-text-muted: #c2b09a;
+  --cshell-accent: #dc987b;
+  --cshell-accent-hover: #e8ad94;
+  --cshell-accent-soft: rgba(220, 152, 123, 0.18);
+  --cshell-danger: #e08a7a;
+  --cshell-focus: #dc987b;
+  --cshell-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+  --cshell-sidebar: #221c17;
+  --cshell-overlay: rgba(0, 0, 0, 0.55);
+}

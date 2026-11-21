@@ -15,7 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-  PNPM_VERSION: 9.15.9
+  PNPM_VERSION: 10.11.0
   NODE_VERSION: 24
 
 jobs:
@@ -44,12 +44,12 @@ jobs:
       - name: Test
         run: cargo test --all-targets --all-features --locked
 
-  frontend:
-    name: Frontend checks and build
+  web:
+    name: Web frontend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -75,13 +75,16 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Test
+        run: pnpm run test:run
+
       - name: Build
         run: pnpm run build
 
   proxy-smoke:
     name: Proxy smoke test
     runs-on: ubuntu-latest
-    needs: [rust, frontend]
+    needs: [rust, web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -108,7 +111,7 @@ jobs:
   docker:
     name: Docker image build
     runs-on: ubuntu-latest
-    needs: [rust, frontend]
+    needs: [rust, web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,3 +127,114 @@ jobs:
           tags: cshell:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+
+  sub2api-integration:
+    name: Real pinned Sub2API integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [rust, web]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sub2api
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: sub2api
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U sub2api -d sub2api"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SUB2API_COMMIT: 2af3f1e15c98c893a89255a037f551046883b8c0
+      SUB2API_TEST_EMAIL: cshell-ci-${{ github.run_id }}@example.invalid
+      SUB2API_TEST_PASSWORD: CshellCI-only-password-123
+    steps:
+      - name: Checkout Cshell
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Checkout exact Sub2API source outside Cshell
+        run: |
+          set -euo pipefail
+          git clone --no-checkout https://github.com/Wei-Shaw/sub2api.git "$RUNNER_TEMP/sub2api-upstream"
+          git -C "$RUNNER_TEMP/sub2api-upstream" fetch --depth 1 origin "$SUB2API_COMMIT"
+          git -C "$RUNNER_TEMP/sub2api-upstream" checkout --detach "$SUB2API_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/sub2api-upstream" rev-parse HEAD)" = "$SUB2API_COMMIT"
+
+      - name: Build pinned Sub2API image
+        run: |
+          set -euo pipefail
+          docker build --pull=false --file "$RUNNER_TEMP/sub2api-upstream/deploy/Dockerfile" --tag cshell-ci-sub2api:"$SUB2API_COMMIT" "$RUNNER_TEMP/sub2api-upstream"
+
+      - name: Start pinned Sub2API
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sub2api-data"
+          docker run --detach --name cshell-ci-sub2api --network host \
+            --read-only --tmpfs /tmp --tmpfs /run \
+            -v "$RUNNER_TEMP/sub2api-data:/app/data" \
+            -e AUTO_SETUP=true -e SERVER_HOST=127.0.0.1 -e SERVER_PORT=18081 \
+            -e DATABASE_HOST=127.0.0.1 -e DATABASE_PORT=5432 -e DATABASE_USER=sub2api \
+            -e DATABASE_PASSWORD=ci-only-password -e DATABASE_DBNAME=sub2api -e DATABASE_SSLMODE=disable \
+            -e REDIS_HOST=127.0.0.1 -e REDIS_PORT=6379 -e REDIS_PASSWORD= \
+            -e ADMIN_EMAIL="$SUB2API_TEST_EMAIL" -e ADMIN_PASSWORD="$SUB2API_TEST_PASSWORD" \
+            -e JWT_SECRET=ci-only-jwt-secret-that-is-long-enough \
+            cshell-ci-sub2api:"$SUB2API_COMMIT"
+          for i in $(seq 1 60); do
+            curl --fail --silent --show-error http://127.0.0.1:18081/health && exit 0
+            sleep 2
+          done
+          docker logs cshell-ci-sub2api
+          exit 1
+
+      - name: Run Cshell real-upstream checks
+        run: |
+          set -euo pipefail
+          cargo build --locked
+          mkdir -p "$RUNNER_TEMP/empty-static"
+          SUB2API_UPSTREAM=http://127.0.0.1:18081 \
+            CSHELL_LISTEN=127.0.0.1:18080 \
+            CSHELL_STATIC_DIR="$RUNNER_TEMP/empty-static" \
+            target/debug/cshell >"$RUNNER_TEMP/cshell.log" 2>&1 &
+          cshell_pid=$!
+          trap 'kill "$cshell_pid" 2>/dev/null || true; docker logs cshell-ci-sub2api > "$RUNNER_TEMP/sub2api.log" 2>&1 || true; docker rm -f cshell-ci-sub2api >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do curl --fail --silent http://127.0.0.1:18080/_cshell/health && break; sleep 1; done
+          CSHELL_BASE_URL=http://127.0.0.1:18080 SUB2API_UPSTREAM_COMMIT="$SUB2API_COMMIT" \
+            node scripts/sub2api-integration.mjs
+
+      - name: Collect sanitized diagnostics and stop upstream
+        if: always()
+        run: |
+          set +e
+          docker logs cshell-ci-sub2api 2>&1 \
+            | sed -E 's/(PASSWORD|JWT_SECRET|REDIS_PASSWORD|DATABASE_PASSWORD)[=:][^ ]*/\1=[REDACTED]/g; s/cshell-ci-[^ @]*/cshell-ci-[REDACTED]/g' \
+            > "$RUNNER_TEMP/sub2api.log"
+          sed -E 's/cshell-ci-[^ @]*/cshell-ci-[REDACTED]/g' \
+            "$RUNNER_TEMP/cshell.log" > "$RUNNER_TEMP/cshell-sanitized.log" 2>/dev/null || true
+          docker rm -f cshell-ci-sub2api >/dev/null 2>&1 || true
+
+      - name: Upload sanitized diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sub2api-integration-logs
+          path: |
+            ${{ runner.temp }}/cshell-sanitized.log
+            ${{ runner.temp }}/sub2api.log
+          if-no-files-found: ignore

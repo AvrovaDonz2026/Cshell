@@ -1,0 +1,42 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--cshell-font-sans, system-ui, sans-serif);
+  background: #ececec;
+  color: #222;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.cshell-user-workspace,
+body.cshell-user-portals {
+  background: var(--cshell-bg);
+  color: var(--cshell-text);
+  font-family: var(--cshell-font-sans);
+}
+
+.cshell-user-workspace :focus-visible,
+body.cshell-user-portals :focus-visible {
+  outline: 2px solid var(--cshell-focus);
+  outline-offset: 2px;
+}

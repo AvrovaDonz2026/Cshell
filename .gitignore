@@ -1,8 +1,8 @@
 /target/
-/frontend/node_modules/
-/frontend/dist/
-/frontend/coverage/
-/frontend/.vite/
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/web/.vite/
 *.tsbuildinfo
 
 .env

@@ -18,7 +18,7 @@
 - `POST /api/v1/auth/login`：JSON 请求体字节透传，登录 token 响应保持原样。
 - `POST /api/v1/payment/public/orders/verify`：未登录订单核验请求保持原方法、路径、请求体。
 - `GET /_cshell/ready`：向上游 `/health` 探测并根据成功状态返回 ready。
-- 用户 SPA 页面（例如 `/payment/result`）：从本地 `frontend/dist/index.html` 服务，不访问上游。
+- 用户 SPA 页面（例如 `/payment/result`）：从本地 `web/dist/index.html` 服务，不访问上游。
 - 未被 UI 白名单允许的 API：转发到上游；mock 拒绝意外请求时，Cshell 返回错误而不是静默访问其他服务。
 
 运行 Rust 合同测试需要 Rust toolchain 和 Node.js；测试会启动 `scripts/mock-sub2api.mjs`，不会连接真实 Sub2API。测试内容代表 mock 合同覆盖，不代表第三方 OAuth、Passkey 或支付结果已完成。

@@ -10,7 +10,9 @@ use percent_encoding::percent_decode_str;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
-// Wei-Shaw/sub2api v0.2.23, frontend/src/router/index.ts. Keep in sync with the vendored UI.
+// SPA allowlist for Cshell user routes served from web/dist (independent UI).
+// Historical Sub2API-era paths may remain listed so they still fall through to
+// the SPA shell instead of the upstream; keep unused entries unless routing changes.
 pub(crate) fn is_spa(path: &str) -> bool {
     // Browser navigation is case-insensitive for the user-facing route allowlist,
     // and a trailing slash should not turn a valid SPA route into an upstream hit.
