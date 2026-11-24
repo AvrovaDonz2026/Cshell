@@ -79,7 +79,7 @@ describe('HomeView', () => {
     expect(wrapper.find('a[href="/admin"]').exists()).toBe(true)
   })
 
-  it('renders the workspace panel with honest static labels', async () => {
+  it('shows the public feature summary without a local-data badge', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     stubSettings({ registration_enabled: true })
@@ -87,6 +87,8 @@ describe('HomeView', () => {
     const wrapper = await mountHome(pinia)
 
     expect(wrapper.text()).toContain('Inside the workspace')
+    expect(wrapper.findAll('.grid-3 .card').length).toBeGreaterThan(0)
+    expect(wrapper.text()).not.toMatch(/local data|mock backend/i)
     for (const label of ['Usage heatmap', 'API keys', 'Billing', 'Profile']) {
       expect(wrapper.text()).toContain(label)
     }
@@ -148,21 +150,5 @@ describe('HomeView', () => {
     expect(wrapper.text()).toContain('Create account')
   })
 
-  it('shows the LOCAL MOCK indicator only when the preview badge exists', async () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    stubSettings({ registration_enabled: true })
 
-    const wrapper = await mountHome(pinia)
-    expect(wrapper.find('.mock-indicator').exists()).toBe(false)
-
-    const badge = document.createElement('div')
-    badge.id = 'cshell-web-mock-label'
-    document.body.appendChild(badge)
-
-    wrapper.unmount()
-    const injected = await mountHome(createPinia())
-    expect(injected.find('.mock-indicator').exists()).toBe(true)
-    expect(injected.find('.mock-indicator').text()).toBe('LOCAL MOCK')
-  })
 })

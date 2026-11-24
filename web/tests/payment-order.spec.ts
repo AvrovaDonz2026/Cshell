@@ -12,7 +12,7 @@ function envelope(data: unknown) {
   return {
     ok: true,
     status: 200,
-    text: async () => JSON.stringify({ code: 0, message: 'LOCAL MOCK', data }),
+    text: async () => JSON.stringify({ code: 0, message: 'ok', data }),
   }
 }
 
@@ -39,9 +39,9 @@ describe('payment order creation payload', () => {
         calls.push({ url: String(url), body: JSON.parse(String(init?.body || '{}')) })
         return envelope({
           order_id: 1000,
-          out_trade_no: 'LOCAL-MOCK-1',
-          pay_url: 'http://127.0.0.1:4284/payment/result?out_trade_no=LOCAL-MOCK-1',
-          resume_token: 'resume-LOCAL-MOCK-1',
+          out_trade_no: 'example-order-1',
+          pay_url: 'https://example.invalid/payment/result?out_trade_no=example-order-1',
+          resume_token: 'example-resume-token',
           result_type: 'order_created',
           status: 'PENDING',
           amount: 20,
@@ -56,7 +56,7 @@ describe('payment order creation payload', () => {
       payment_type: 'alipay',
       order_type: 'subscription',
       plan_id: 11,
-      return_url: 'http://127.0.0.1:4284/payment/result',
+      return_url: 'https://example.invalid/payment/result',
     })
 
     expect(calls).toHaveLength(1)
@@ -66,11 +66,11 @@ describe('payment order creation payload', () => {
       payment_type: 'alipay',
       order_type: 'subscription',
       plan_id: 11,
-      return_url: 'http://127.0.0.1:4284/payment/result',
+      return_url: 'https://example.invalid/payment/result',
       payment_source: 'web',
     })
     expect(result.pay_url).toContain('/payment/result')
-    expect(result.resume_token).toBe('resume-LOCAL-MOCK-1')
+    expect(result.resume_token).toBe('example-resume-token')
   })
 
   it('passes an AbortSignal through to fetch', async () => {
@@ -98,15 +98,15 @@ describe('payment order creation payload', () => {
       vi.fn(async (url: string) => {
         paths.push(String(url))
         return envelope({
-          out_trade_no: 'LOCAL-MOCK-1',
+          out_trade_no: 'example-order-1',
           status: 'COMPLETED',
           ...(String(url).includes('/resolve') ? { id: 1 } : { paid: true }),
         })
       }),
     )
 
-    const verified = await verifyPublicOrder({ out_trade_no: 'LOCAL-MOCK-1' })
-    const resolved = await resolvePublicOrder({ resume_token: 'resume-LOCAL-MOCK-1' })
+    const verified = await verifyPublicOrder({ out_trade_no: 'example-order-1' })
+    const resolved = await resolvePublicOrder({ resume_token: 'example-resume-token' })
 
     expect(paths[0]).toContain('/api/v1/payment/public/orders/verify')
     expect(paths[1]).toContain('/api/v1/payment/public/orders/resolve')
@@ -133,7 +133,7 @@ describe('payment order creation payload', () => {
 describe('safe redirect validation', () => {
   it('accepts absolute http(s) URLs', () => {
     expect(isSafeRedirectUrl('https://pay.example.com/checkout')).toBe(true)
-    expect(isSafeRedirectUrl('http://127.0.0.1:4284/payment/result')).toBe(true)
+    expect(isSafeRedirectUrl('https://example.invalid/payment/result')).toBe(true)
   })
 
   it('accepts same-origin relative paths', () => {

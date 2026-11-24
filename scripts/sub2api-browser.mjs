@@ -29,6 +29,7 @@ import { access, mkdir, open, readFile, unlink, writeFile } from 'node:fs/promis
 import { constants as fsConstants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const webPkg = path.join(root, 'web/package.json')
@@ -66,7 +67,7 @@ const env = {
   password: process.env.SUB2API_TEST_PASSWORD || '',
   adminEmail: process.env.SUB2API_ADMIN_EMAIL || '',
   adminPassword: process.env.SUB2API_ADMIN_PASSWORD || '',
-  upstream: process.env.SUB2API_UPSTREAM_ID || 'unknown',
+  upstream: process.env.SUB2API_UPSTREAM_ID || '',
 }
 const missing = [
   ['SUB2API_TEST_EMAIL', env.email],
@@ -80,9 +81,7 @@ if (missing.length) failConfig(`Missing required environment: ${missing.join(', 
 if (env.email.toLowerCase() === env.adminEmail.toLowerCase()) {
   failConfig('SUB2API_TEST_EMAIL must be a non-admin account distinct from SUB2API_ADMIN_EMAIL')
 }
-if (env.upstream === 'unknown') {
-  console.warn('SUB2API_UPSTREAM_ID is unset; recording upstream as unknown')
-}
+if (!env.upstream) failConfig('Missing required environment: SUB2API_UPSTREAM_ID')
 
 const artifactsDir = path.resolve(
   root,
@@ -302,6 +301,17 @@ async function preflight() {
     aliyun_captcha_enabled: settings.aliyun_captcha_enabled === true,
   }
   recordPreflight('API forwarding', { route: '/api/v1/settings/public', status: 200 })
+
+  assert.equal(
+    report.settings.registration_enabled,
+    true,
+    'real backend registration must be enabled for browser registration coverage',
+  )
+  assert.equal(
+    report.settings.email_verify_enabled,
+    false,
+    'browser registration requires email verification to be disabled',
+  )
 
   if (
     report.settings.turnstile_enabled ||
@@ -722,9 +732,140 @@ async function assertNoPaidClaim(page, label) {
   )
 }
 
+/* ------------------------------------------- ported acceptance matrix helpers */
+
+/** Warm paper palette from web/src/styles/theme.css. */
+const palette = {
+  light: {
+    paper: 'rgb(244, 239, 230)',
+    surface: 'rgb(255, 249, 240)',
+    ink: 'rgb(44, 36, 28)',
+    accent: 'rgb(169, 94, 69)',
+  },
+  dark: {
+    paper: 'rgb(28, 24, 20)',
+    surface: 'rgb(46, 38, 31)',
+    ink: 'rgb(243, 232, 218)',
+    accent: 'rgb(220, 152, 123)',
+  },
+}
+
+/**
+ * Wait for a computed surface to settle on the expected color, then assert that the
+ * element is painted with it and stays inside the viewport.
+ */
+async function paintedSurface(locator, theme, kind = 'surface') {
+  await locator.waitFor({ state: 'visible' })
+  const expected = palette[theme][kind]
+  await locator.evaluate(
+    (element, expectedColor) =>
+      new Promise((resolve, reject) => {
+        const started = performance.now()
+        const sample = () => {
+          if (getComputedStyle(element).backgroundColor === expectedColor) return resolve()
+          if (performance.now() - started > 3000) {
+            return reject(
+              new Error(
+                `computed surface never settled to ${expectedColor}; got ${getComputedStyle(element).backgroundColor}`,
+              ),
+            )
+          }
+          requestAnimationFrame(sample)
+        }
+        sample()
+      }),
+    expected,
+  )
+  const actual = await locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const rect = element.getBoundingClientRect()
+    return {
+      background: style.backgroundColor,
+      color: style.color,
+      width: rect.width,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+    }
+  })
+  assert.equal(actual.background, expected, `computed ${kind}: ${JSON.stringify(actual)}`)
+  assert.ok(actual.left >= -1 && actual.right <= actual.viewportWidth + 1, 'surface exceeds the viewport')
+  return actual
+}
+
+/** Assert the workspace shell is themed, painted warm and free of overflow. */
+async function assertWorkspaceTheme(page, theme, label) {
+  await page.waitForFunction(
+    (expected) => document.documentElement.dataset.theme === expected,
+    theme,
+    { timeout: 20_000 },
+  )
+  const shell = page.locator('.cshell-user-workspace').first()
+  await shell.waitFor()
+  const painted = await paintedSurface(shell, theme, 'paper')
+  assert.equal(painted.color, palette[theme].ink, `${label}: computed workspace ink`)
+  const metrics = await assertNoOverflow(page, label)
+  return { ...metrics, ink: painted.color }
+}
+
+/** Seed only UI preference keys; the real session is always created by a real login. */
+async function seedPreferences(context, theme) {
+  await context.addInitScript((themeMode) => {
+    localStorage.setItem('cshell_theme', themeMode)
+    localStorage.setItem('cshell_locale', 'en')
+  }, theme)
+}
+
+/**
+ * A guest context. `system` is the emulated OS colour scheme: the app only stores
+ * light/dark (there is no "system" theme mode in web/src/stores/theme.ts), so the
+ * OS scheme is always the *opposite* of the stored preference to prove the
+ * explicit preference wins, exactly as the retired mock matrix did.
+ */
+async function guestContext({ width, height, theme }) {
+  const context = await browser.newContext({
+    viewport: { width, height },
+    locale: 'en-US',
+    timezoneId: 'UTC',
+    colorScheme: theme === 'light' ? 'dark' : 'light',
+  })
+  await seedPreferences(context, theme)
+  await guardExternal(context)
+  return context
+}
+
+/**
+ * A context that reuses the session cookies captured from a real login. Only UI
+ * preferences are seeded on top; no credential, token or API response is faked.
+ */
+async function sessionContext({ width, height, theme, storageState, mobile = false }) {
+  assert.ok(storageState, 'the workspace matrix needs a session captured from a real login')
+  const context = await browser.newContext({
+    viewport: { width, height },
+    locale: 'en-US',
+    timezoneId: 'UTC',
+    colorScheme: theme === 'light' ? 'dark' : 'light',
+    storageState,
+    isMobile: mobile,
+    hasTouch: mobile,
+  })
+  await seedPreferences(context, theme)
+  await guardExternal(context)
+  return context
+}
+
+
 /* --------------------------------------------------------------------- gate */
 
 let browser = null
+/**
+ * Cookies + origins captured from the real login. Later matrix contexts reuse the
+ * real session instead of fabricating tokens; only UI preferences are seeded.
+ */
+let sessionState = null
 
 try {
   await preflight()
@@ -823,6 +964,162 @@ try {
       page,
     )
 
+    /* --------------------------- ported public-home matrix (real backend) */
+
+    await check(
+      'public home theme and locale controls update the teleported menu',
+      async () => {
+        const guest = await guestContext({ width: 1440, height: 1000, theme: 'light' })
+        const publicPage = await guest.newPage()
+        track(publicPage, 'guest-home-prefs')
+        try {
+          await publicPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+          await publicPage.locator('.cshell-public').waitFor()
+          await settle(publicPage)
+
+          assert.ok((await publicPage.locator('.grid-3 .card').count()) > 0, 'public feature summary is missing')
+
+          const prefs = publicPage.locator('.site-header__prefs')
+          const themeButton = prefs.locator('.theme-toggle__button')
+          await themeButton.waitFor()
+          assert.equal(await themeButton.getAttribute('aria-pressed'), 'false')
+          await themeButton.click()
+          await publicPage.waitForFunction(
+            () => document.documentElement.dataset.theme === 'dark',
+            null,
+            { timeout: 15_000 },
+          )
+          assert.equal(await storageValue(publicPage, 'cshell_theme'), 'dark')
+          await paintedSurface(publicPage.locator('.cshell-public'), 'dark', 'paper')
+
+          await chooseLocale(publicPage, prefs, '中文')
+          await publicPage.waitForFunction(() => document.documentElement.lang === 'zh', null, {
+            timeout: 15_000,
+          })
+          assert.equal(await storageValue(publicPage, 'cshell_locale'), 'zh')
+          const heading = (await publicPage.locator('h1').first().innerText()).trim()
+          assert.ok(heading.length > 0, 'the localized heading disappeared')
+
+          // The teleported list must inherit the public portal palette, not the body default.
+          await prefs.locator('.cshell-select__trigger').click()
+          const popup = publicPage.locator('body > .cshell-select__list')
+          await popup.waitFor()
+          const popupPaint = await popup.evaluate((element) => ({
+            background: getComputedStyle(element).backgroundColor,
+            ink: getComputedStyle(element).color,
+          }))
+          assert.equal(popupPaint.background, palette.dark.surface)
+          assert.equal(popupPaint.ink, palette.dark.ink)
+          await popup.getByRole('option', { name: 'English' }).click()
+          await popup.waitFor({ state: 'hidden' })
+
+          // Both preferences survive a hard reload on the real production bundle.
+          await publicPage.reload({ waitUntil: 'domcontentloaded' })
+          await publicPage.locator('.cshell-public').waitFor()
+          await settle(publicPage)
+          assert.equal(
+            await publicPage.evaluate(() => document.documentElement.dataset.theme),
+            'dark',
+          )
+          assert.equal(await publicPage.evaluate(() => document.documentElement.lang), 'en')
+          const metrics = await assertNoOverflow(publicPage, 'guest home after reload')
+          await screenshot(publicPage, 'public-prefs-dark')
+          report.publicPrefs = { theme: 'dark', localeRoundTrip: true, metrics }
+          return { metrics }
+        } finally {
+          await guest.close()
+        }
+      },
+    )
+
+    const guestDevices = [
+      ['desktop', 1440, 1000],
+      ['tablet', 820, 1180],
+      ['phone', 390, 844],
+    ]
+    for (const [device, width, height] of guestDevices) {
+      for (const theme of ['light', 'dark']) {
+        await check(`guest home ${device} ${theme}`, async () => {
+          const guest = await guestContext({ width, height, theme })
+          const publicPage = await guest.newPage()
+          track(publicPage, `guest-home-${device}-${theme}`)
+          try {
+            await publicPage.goto(`${baseUrl}/`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 60_000,
+            })
+            await publicPage.locator('.cshell-public').waitFor()
+            await settle(publicPage)
+            assert.equal(new URL(publicPage.url()).pathname, '/')
+            assert.equal(
+              await publicPage.evaluate(() => document.documentElement.dataset.theme),
+              theme,
+              'the stored theme lost to the emulated OS colour scheme',
+            )
+            const painted = await paintedSurface(
+              publicPage.locator('.cshell-public'),
+              theme,
+              'paper',
+            )
+            assert.equal(painted.color, palette[theme].ink, `${device} ${theme}: computed ink`)
+            const metrics = await assertNoOverflow(publicPage, `guest home ${device} ${theme}`)
+            const logo = publicPage.locator('.wordmark__logo')
+            assert.ok(
+              await logo.evaluate((element) => element.complete && element.naturalWidth > 0),
+              'the wordmark did not load',
+            )
+            if (report.settings?.registration_enabled) {
+              assert.ok(
+                (await publicPage.locator('a[href="/register"]').count()) > 0,
+                'open registration is configured but the public home hides the register link',
+              )
+            }
+            await publicPage.reload({ waitUntil: 'domcontentloaded' })
+            await publicPage.locator('.cshell-public').waitFor()
+            await settle(publicPage)
+            assert.equal(new URL(publicPage.url()).pathname, '/')
+            await screenshot(publicPage, `guest-home-${device}-${theme}`)
+            return { metrics }
+          } finally {
+            await guest.close()
+          }
+        })
+      }
+    }
+
+    await check(
+      'real registration creates a unique account and authenticates it',
+      async () => {
+        const registrationEmail = `cshell-browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}@example.invalid`
+        const registrationPassword = `CshellBrowser-${randomUUID()}-aA1!`
+        await page.goto(`${baseUrl}/register`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+        await page.locator('form input[type="email"]').waitFor()
+        const fields = page.locator('form input[type="password"]')
+        assert.equal(await fields.count(), 2, 'registration should request password and confirmation')
+        await page.locator('form input[type="email"]').fill(registrationEmail)
+        await fields.nth(0).fill(registrationPassword)
+        await fields.nth(1).fill(registrationPassword)
+        const response = page.waitForResponse(
+          candidate => new URL(candidate.url()).pathname === '/api/v1/auth/register' && candidate.request().method() === 'POST',
+          { timeout: 30_000 },
+        )
+        await page.locator('form button[type="submit"]').click()
+        assert.equal((await response).status(), 200, 'real register endpoint did not return success')
+        await page.waitForURL(url => url.pathname === '/dashboard', { timeout: 60_000 })
+        await waitForWorkspace(page)
+        const profile = envelope(
+          (await request('/api/v1/user/profile', {
+            headers: { authorization: `Bearer ${await storageValue(page, 'auth_token')}` },
+          })).text,
+          'registered user profile',
+        )
+        assert.equal(profile.email, registrationEmail, 'registration did not authenticate the created identity')
+        assert.notEqual(profile.role, 'admin')
+        return { role: profile.role, authenticated: true }
+      },
+      page,
+    )
+
     await check(
       'wrong password is rejected with the exact declared status',
       async () => {
@@ -888,8 +1185,74 @@ try {
           role: user.role,
           hasAccessToken: Boolean(await storageValue(page, 'auth_token')),
         }
+        // Reuse this real session for the layout/theme matrix below. This captures
+        // cookies + localStorage; nothing is fabricated and no credential is written.
+        sessionState = await context.storageState()
+        report.sessionCaptured = true
         await screenshot(page, 'dashboard')
         return { role: user.role }
+      },
+      page,
+    )
+
+    await check(
+      'account menu: teleported locale popup, Escape hierarchy and focus restore',
+      async () => {
+        await gotoRoute(page, '/dashboard')
+        await waitForWorkspace(page)
+        const trigger = page.locator('.account-menu__trigger')
+        await trigger.click()
+        const menu = page.locator('.account-menu')
+        await menu.waitFor()
+        assert.equal(await menu.getAttribute('role'), 'menu')
+        // Five rows: profile, back home, logout + the two preference controls' labels.
+        const rows = menu.locator('.account-menu__item')
+        assert.equal(await rows.count(), 3, 'the account menu must expose three menu items')
+        const geometry = await menu.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return { left: rect.left, right: rect.right, viewport: innerWidth }
+        })
+        assert.ok(
+          geometry.left >= -1 && geometry.right <= geometry.viewport + 1,
+          `account menu exceeds the viewport: ${JSON.stringify(geometry)}`,
+        )
+        const themeButton = menu.locator('.theme-toggle__button')
+        await themeButton.waitFor()
+        const before = await page.evaluate(() => document.documentElement.dataset.theme)
+        await themeButton.click()
+        await page.waitForFunction(
+          (previous) => document.documentElement.dataset.theme !== previous,
+          before,
+          { timeout: 15_000 },
+        )
+        assert.ok(await menu.isVisible(), 'the theme switch closed the account menu')
+        await themeButton.click()
+        await page.waitForFunction(
+          (expected) => document.documentElement.dataset.theme === expected,
+          before,
+          { timeout: 15_000 },
+        )
+
+        // Nested teleported select: opening it must not close the parent menu.
+        await menu.locator('.cshell-select__trigger').click()
+        const list = page.locator('body > .cshell-select__list')
+        await list.waitFor()
+        assert.ok(await menu.isVisible(), 'opening the locale list closed the account menu')
+        await list.dispatchEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        await list.waitFor({ state: 'hidden' })
+        assert.ok(
+          await menu.isVisible(),
+          'the first Escape closed the account menu instead of only the locale list',
+        )
+        await menu.dispatchEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        await menu.waitFor({ state: 'hidden' })
+        assert.ok(
+          await trigger.evaluate((element) => element === document.activeElement),
+          'the account trigger did not regain focus after Escape',
+        )
+        const metrics = await assertNoOverflow(page, 'account menu closed')
+        await screenshot(page, 'account-menu-escaping')
+        return { metrics }
       },
       page,
     )
@@ -1039,6 +1402,201 @@ try {
     )
 
     await check(
+      'usage draft filters stay unapplied until Apply, then query exactly',
+      async () => {
+        await gotoRoute(page, '/usage')
+        await waitForWorkspace(page)
+        await settle(page)
+        const observed = []
+        const observe = (request) => {
+          const url = new URL(request.url())
+          if (
+            url.pathname === '/api/v1/usage' ||
+            url.pathname === '/api/v1/usage/dashboard/trend'
+          ) {
+            observed.push(url)
+          }
+        }
+        page.on('request', observe)
+        try {
+          const start = page.getByLabel('Start date', { exact: true })
+          const end = page.getByLabel('End date', { exact: true })
+          await start.waitFor()
+          await end.waitFor()
+          // Pick a range inside the default (month) scale cap of 62 days.
+          const today = new Date()
+          const iso = (offsetDays) => {
+            const date = new Date(today.getTime() - offsetDays * 86_400_000)
+            return date.toISOString().slice(0, 10)
+          }
+          const draftStart = iso(10)
+          const draftEnd = iso(3)
+          observed.length = 0
+          await start.fill(draftStart)
+          await end.fill(draftEnd)
+          assert.equal(
+            observed.length,
+            0,
+            'editing the draft dates fetched usage data before Apply',
+          )
+          const logs = page.waitForResponse(
+            (candidate) =>
+              new URL(candidate.url()).pathname === '/api/v1/usage' &&
+              candidate.request().method() === 'GET',
+            { timeout: 30_000 },
+          )
+          const trend = page.waitForResponse(
+            (candidate) =>
+              new URL(candidate.url()).pathname === '/api/v1/usage/dashboard/trend' &&
+              candidate.request().method() === 'GET',
+            { timeout: 30_000 },
+          )
+          await page.getByRole('button', { name: 'Apply', exact: true }).click()
+          assert.equal((await logs).status(), 200)
+          assert.equal((await trend).status(), 200)
+          await settle(page)
+          assert.ok(observed.length >= 2, 'Apply did not issue both usage requests')
+          for (const url of observed) {
+            assert.equal(url.searchParams.get('start_date'), draftStart, `start_date: ${url.search}`)
+            assert.equal(url.searchParams.get('end_date'), draftEnd, `end_date: ${url.search}`)
+          }
+          const appliedText = await page
+            .locator('.applied__text')
+            .first()
+            .innerText()
+            .catch(() => '')
+          assert.ok(
+            appliedText.includes(draftStart) && appliedText.includes(draftEnd),
+            `the applied range summary did not update: ${appliedText}`,
+          )
+          assert.equal(
+            await page.getByRole('button', { name: 'Apply', exact: true }).count(),
+            1,
+            'the Apply control disappeared',
+          )
+          const metrics = await assertNoOverflow(page, 'usage applied filters')
+          await screenshot(page, 'usage-applied-filters')
+          return { appliedText, requests: observed.length, metrics }
+        } finally {
+          page.off('request', observe)
+        }
+      },
+      page,
+    )
+
+    await check(
+      'usage line chart toggle renders dependency-free SVG in both themes',
+      async () => {
+        await gotoRoute(page, '/usage')
+        await waitForWorkspace(page)
+        const region = page.locator('section[aria-labelledby="usage-calendar-title"]')
+        await region.waitFor()
+        const viewGroup = page.getByRole('group', { name: 'View type' })
+        await viewGroup.waitFor()
+        assert.equal(await viewGroup.locator('button').count(), 2, 'the view control must expose two modes')
+        const heatmapButton = viewGroup.getByRole('button', { name: 'Heatmap', exact: true })
+        const lineButton = viewGroup.getByRole('button', { name: 'Line', exact: true })
+        assert.equal(
+          await heatmapButton.getAttribute('aria-pressed'),
+          'true',
+          'the heatmap must be the default view',
+        )
+        await lineButton.click()
+        assert.equal(await lineButton.getAttribute('aria-pressed'), 'true')
+        assert.equal(await heatmapButton.getAttribute('aria-pressed'), 'false')
+
+        const hasData = await region.locator('[role="gridcell"]').count()
+        if (hasData === 0) {
+          // A fresh real backend legitimately has nothing to chart. Assert the
+          // documented empty state instead of fabricating points.
+          const empty = region.getByText('No data points to chart for this period')
+          await empty.waitFor({ timeout: 20_000 })
+          report.lineChartRendered = false
+          await screenshot(page, 'usage-line-empty')
+          return { rendered: false }
+        }
+
+        const svg = region.locator('svg[role="img"]')
+        await svg.waitFor({ timeout: 20_000 })
+        const aria = await svg.getAttribute('aria-label')
+        assert.match(
+          aria,
+          /requests from \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}; total \d/,
+          `unexpected line chart aria-label: ${aria}`,
+        )
+        const geometry = await svg.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return { width: rect.width, height: rect.height }
+        })
+        assert.ok(geometry.height >= 180, `the line chart is too short: ${JSON.stringify(geometry)}`)
+
+        for (const theme of ['light', 'dark']) {
+          const current = await page.evaluate(() => document.documentElement.dataset.theme)
+          if (current !== theme) {
+            await page.locator('.account-menu__trigger').click()
+            const themeButton = page.locator('.account-menu__prefs .theme-toggle__button')
+            await themeButton.waitFor()
+            await themeButton.click()
+            await page.waitForFunction(
+              (expected) => document.documentElement.dataset.theme === expected,
+              theme,
+              { timeout: 15_000 },
+            )
+            await page.keyboard.press('Escape')
+            await page.locator('.account-menu').waitFor({ state: 'hidden' })
+          }
+          await paintedSurface(page.locator('.cshell-user-workspace').first(), theme, 'paper')
+          const expected = await page.evaluate(() => {
+            const probe = document.createElement('span')
+            probe.style.color = 'var(--cshell-accent)'
+            document.body.append(probe)
+            const color = getComputedStyle(probe).color
+            probe.remove()
+            return color
+          })
+          const stroke = await svg
+            .locator('path.trend-chart__line')
+            .evaluate((element) => getComputedStyle(element).stroke)
+          assert.equal(stroke, expected, `the line stroke does not follow the ${theme} accent token`)
+          await screenshot(page, `usage-line-${theme}`)
+        }
+
+        // Switching the metric re-derives in place: no new trend request.
+        let trendFetches = 0
+        const observe = (request) => {
+          if (new URL(request.url()).pathname.includes('/usage/dashboard/trend')) trendFetches += 1
+        }
+        page.on('request', observe)
+        try {
+          const before = trendFetches
+          const caption = region.locator('.trend-chart__max')
+          const previous = (await caption.innerText()).trim()
+          await page.getByRole('button', { name: 'Tokens', exact: true }).click()
+          await page.waitForFunction(
+            (prev) => {
+              const element = document.querySelector(
+                '[aria-labelledby="usage-calendar-title"] .trend-chart__max',
+              )
+              return element !== null && (element.textContent || '').trim() !== prev
+            },
+            previous,
+            { timeout: 20_000 },
+          )
+          assert.equal(trendFetches, before, 'switching the metric triggered a new trend request')
+        } finally {
+          page.off('request', observe)
+        }
+
+        await heatmapButton.click()
+        await region.locator('[role="grid"]').first().waitFor()
+        assert.equal(await svg.count(), 0, 'the heatmap view still renders the line chart')
+        report.lineChartRendered = true
+        return { rendered: true }
+      },
+      page,
+    )
+
+    await check(
       'billing pages never claim a payment was made',
       async () => {
         if (!billingEnabled()) {
@@ -1087,6 +1645,70 @@ try {
       page,
     )
 
+    await check(
+      'billing inline confirmation opens and cancels without creating an order',
+      async () => {
+        if (!billingEnabled()) {
+          // With billing off the purchase view is unreachable by design; the
+          // redirect is asserted by the previous check.
+          return { mode: 'disabled' }
+        }
+        await gotoRoute(page, '/purchase')
+        await waitForWorkspace(page)
+        const planButton = page.getByRole('button', { name: /Subscribe Now/i }).first()
+        const hasPlan = (await planButton.count()) > 0
+        if (!hasPlan) {
+          // A real backend with no for-sale plan legitimately renders the empty
+          // state; assert it rather than inventing a plan.
+          await page.getByText('No plans available').first().waitFor({ timeout: 20_000 })
+          return { mode: 'enabled-no-plans' }
+        }
+
+        // Count order POSTs so cancelling can be proven not to create one.
+        let orderPosts = 0
+        const observe = (request) => {
+          if (
+            new URL(request.url()).pathname === '/api/v1/payment/orders' &&
+            request.method() === 'POST'
+          ) {
+            orderPosts += 1
+          }
+        }
+        page.on('request', observe)
+        try {
+          await planButton.click()
+          const confirm = page.locator('section.confirm')
+          await confirm.waitFor()
+          assert.equal(
+            await confirm.getAttribute('aria-label'),
+            'Confirm payment',
+            'the inline confirmation lost its label',
+          )
+          const planName = (await confirm.locator('.confirm__plan').innerText()).trim()
+          assert.ok(planName.length > 0, 'the confirmation does not name the selected plan')
+          const confirmButton = confirm.getByRole('button', { name: /Confirm payment/i })
+          const cancelButton = confirm.getByRole('button', { name: 'Cancel', exact: true })
+          await confirmButton.waitFor()
+          await cancelButton.waitFor()
+          const metrics = await assertNoOverflow(page, 'purchase confirmation')
+          await screenshot(page, 'purchase-confirm')
+
+          await cancelButton.click()
+          await confirm.waitFor({ state: 'hidden' })
+          assert.equal(orderPosts, 0, 'cancelling created a payment order')
+          assert.equal(
+            new URL(page.url()).pathname,
+            '/purchase',
+            'cancelling left the purchase route',
+          )
+          return { mode: 'enabled', planName, orderPosts, metrics }
+        } finally {
+          page.off('request', observe)
+        }
+      },
+      page,
+    )
+
     const uniqueKey = `ci-key-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     const editedKey = `${uniqueKey}-edited`
 
@@ -1100,6 +1722,40 @@ try {
         const createDialog = page.locator('[role="dialog"]')
         await createDialog.waitFor()
         await createDialog.locator('input').first().fill(uniqueKey)
+
+        // Ported dialog depth: a long name must not overflow the panel, the nested
+        // group select must open above the dialog and Escape must peel one layer at
+        // a time (list, then dialog), never both.
+        const panel = await createDialog.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return {
+            background: getComputedStyle(element).backgroundColor,
+            top: rect.top,
+            bottom: rect.bottom,
+            viewportHeight: innerHeight,
+          }
+        })
+        const theme = await page.evaluate(() => document.documentElement.dataset.theme)
+        assert.equal(panel.background, palette[theme].surface, 'the dialog is not painted with its surface')
+        assert.ok(
+          panel.top >= -1 && panel.bottom <= panel.viewportHeight + 1,
+          `the dialog exceeds the viewport: ${JSON.stringify(panel)}`,
+        )
+        const groupSelect = createDialog.locator('.cshell-select__trigger')
+        if ((await groupSelect.count()) > 0) {
+          await groupSelect.click()
+          const listbox = page.locator('body > .cshell-select__list')
+          await listbox.waitFor()
+          const listPaint = await paintedSurface(listbox, theme, 'surface')
+          assert.ok(
+            listPaint.top >= -1 && listPaint.bottom <= listPaint.viewportHeight + 1,
+            `the nested list exceeds the viewport: ${JSON.stringify(listPaint)}`,
+          )
+          await page.keyboard.press('Escape')
+          await listbox.waitFor({ state: 'hidden' })
+          assert.ok(await createDialog.isVisible(), 'the first Escape closed the parent dialog')
+        }
+
         const created = page.waitForResponse(
           (candidate) =>
             new URL(candidate.url()).pathname === '/api/v1/keys' &&
@@ -1238,75 +1894,116 @@ try {
     await context.close()
   }
 
-  /* ------------------------------------------------ desktop dark regression */
+  /* ------------------------------------- desktop dark + tablet dark matrix */
 
-  {
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 1000 },
-      locale: 'en-US',
-      timezoneId: 'UTC',
-      colorScheme: 'light',
-    })
+  // The warm-painted shell, section navigation and overflow gate run on two
+  // widths per theme against the real backend session captured above.
+  for (const [device, width, height, theme] of [
+    ['desktop', 1440, 1000, 'dark'],
+    ['tablet', 820, 1180, 'dark'],
+  ]) {
+    const context = await sessionContext({ width, height, theme, storageState: sessionState })
     const page = await context.newPage()
     page.setDefaultTimeout(30_000)
     page.setDefaultNavigationTimeout(60_000)
-    track(page, 'desktop-dark')
-    await guardExternal(context)
+    track(page, `${device}-${theme}`)
 
     await check(
-      'desktop dark: theme and locale switches persist across reloads',
+      `${device} ${theme}: workspace palette, locale persist and overflow`,
       async () => {
-        await loginAsUser(page)
-        const themeButton = page.locator('.shell-sidebar .theme-toggle__button')
-        await themeButton.waitFor()
-        await themeButton.click()
-        await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, {
-          timeout: 15_000,
-        })
-        assert.equal(await storageValue(page, 'cshell_theme'), 'dark')
-        await page.reload({ waitUntil: 'domcontentloaded' })
+        await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' })
         await waitForWorkspace(page)
         await settle(page)
-        await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
-
-        await chooseLocale(page, page.locator('.shell-sidebar'), '中文')
-        await page.waitForFunction(() => document.documentElement.lang === 'zh')
+        const painted = await assertWorkspaceTheme(page, theme, `${device} ${theme} dashboard`)
+        assert.equal(
+          await page.evaluate(() => localStorage.getItem('cshell_locale')),
+          'en',
+          'the seeded locale was not applied',
+        )
+        await page.locator('.account-menu__trigger').click()
+        await page.locator('.account-menu').waitFor()
+        await chooseLocale(
+          page,
+          page.locator('.account-menu__prefs'),
+          '中文',
+        )
+        await page.waitForFunction(() => document.documentElement.lang === 'zh', null, {
+          timeout: 15_000,
+        })
         assert.equal(await storageValue(page, 'cshell_locale'), 'zh')
         await page.reload({ waitUntil: 'domcontentloaded' })
         await waitForWorkspace(page)
         await settle(page)
         assert.equal(await page.evaluate(() => document.documentElement.lang), 'zh')
-        assert.equal(await storageValue(page, 'cshell_theme'), 'dark')
-        const metrics = await assertNoOverflow(page, 'desktop dark dashboard')
-        await screenshot(page, 'dashboard-dark-zh')
-        return { metrics }
+        assert.equal(
+          await page.evaluate(() => document.documentElement.dataset.theme),
+          theme,
+          'the theme preference did not survive a reload',
+        )
+        await screenshot(page, `${device}-${theme}-dashboard-zh`)
+        return { ...painted }
       },
       page,
     )
 
     await check(
-      'desktop dark: section navigation and non-destructive routes',
+      `${device} ${theme}: section navigation and non-destructive routes`,
       async () => {
+        await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' })
+        await waitForWorkspace(page)
+        await settle(page)
         const nav = page.locator('.section-nav')
         await nav.waitFor()
+        const expected = ['/dashboard', '/usage', '/keys']
+        for (const routePath of expected) {
+          assert.equal(
+            await nav.locator(`a[href="${routePath}"]`).count(),
+            1,
+            `the section nav is missing ${routePath}`,
+          )
+        }
+        const geometry = await nav.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return {
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+            overflow: element.scrollWidth > element.clientWidth + 1,
+            viewport: innerWidth,
+          }
+        })
+        assert.ok(
+          geometry.width <= geometry.viewport + 1,
+          `the section nav is wider than the viewport: ${JSON.stringify(geometry)}`,
+        )
+        assert.ok(
+          geometry.right <= geometry.viewport + 1,
+          `the section nav overflows on the right: ${JSON.stringify(geometry)}`,
+        )
+
         await nav.locator('a[href="/usage"]').click()
         await page.waitForURL((url) => url.pathname === '/usage', { timeout: 30_000 })
         await settle(page)
-        const metrics = [await assertNoOverflow(page, 'desktop dark usage')]
+        assert.equal(
+          await nav.locator('a[href="/usage"]').getAttribute('aria-current'),
+          'page',
+          'the active section is not marked current',
+        )
+        const metrics = [await assertNoOverflow(page, `${device} ${theme} usage`)]
         for (const route of ['/keys', '/profile', '/dashboard']) {
           await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
           await waitForWorkspace(page)
           await settle(page)
           assert.equal(new URL(page.url()).pathname, route)
-          metrics.push(await assertNoOverflow(page, `desktop dark ${route}`))
+          metrics.push(await assertNoOverflow(page, `${device} ${theme} ${route}`))
         }
         assert.equal(
           await page.locator('.shell-content [role="alert"]').count(),
           0,
-          'the desktop dark flow renders an error alert',
+          `the ${device} ${theme} flow renders an error alert`,
         )
-        await screenshot(page, 'desktop-dark-keys')
-        return { metrics }
+        await screenshot(page, `${device}-${theme}-keys`)
+        return { metrics, geometry }
       },
       page,
     )

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
@@ -17,7 +17,6 @@ const theme = useThemeStore()
 const router = useRouter()
 
 /** Injected by the local preview server; we only display it, never add it. */
-const mockBadgePresent = ref(false)
 
 const registrationLinkEnabled = computed(
   () => settings.settingsReady && settings.registrationEnabled,
@@ -59,7 +58,6 @@ async function onSignIn(): Promise<void> {
 
 function detectMockBadge(): void {
   if (typeof document === 'undefined') return
-  mockBadgePresent.value = Boolean(document.getElementById('cshell-web-mock-label'))
 }
 
 onMounted(() => {
@@ -68,7 +66,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  mockBadgePresent.value = false
 })
 </script>
 
@@ -236,9 +233,6 @@ onBeforeUnmount(() => {
           <a class="footer-link" href="/admin">
             {{ t('home.footer.adminEntry') }}
           </a>
-          <span v-if="mockBadgePresent" class="mock-indicator">
-            LOCAL MOCK
-          </span>
         </div>
       </div>
     </footer>
@@ -670,16 +664,6 @@ onBeforeUnmount(() => {
   color: var(--cshell-text);
 }
 
-.mock-indicator {
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--cshell-radius-badge);
-  background: var(--cshell-surface-muted);
-  border: 1px solid var(--cshell-border);
-  color: var(--cshell-text-muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
 
 @media (max-width: 900px) {
   .hero {

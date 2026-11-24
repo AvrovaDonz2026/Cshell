@@ -39,12 +39,21 @@ SUB2API_UPSTREAM=http://127.0.0.1:8081 ./target/release/cshell
 
 将示例端口改为现有 Sub2API 的端口，然后访问 `http://127.0.0.1:8080/`。默认静态目录 `web/dist` 相对进程工作目录。Compose 会读取 `.env` 做变量替换；本地二进制请直接设置进程环境变量。
 
-独立 UI 本地 mock 预览（不启动 Rust / 真实 Sub2API）使用：
+## 本地功能测试：真实 Sub2API
+
+本地 UI 功能测试和浏览器验收统一使用真实 Sub2API，不使用业务 API mock。启动器 `scripts/cshell-local-real.mjs` 供给真实后端、构建并启动 Cshell，且验证真实登录；默认绑定 loopback：Cshell `http://127.0.0.1:18080`，Sub2API `http://127.0.0.1:18081`。
 
 ```sh
-node scripts/cshell-web-preview.mjs start
-node scripts/cshell-web-preview.mjs status   # http://127.0.0.1:4284
+node scripts/cshell-local-real.mjs start
+node scripts/cshell-local-real.mjs status
+node scripts/cshell-local-real.mjs logs
+node scripts/cshell-local-real.mjs stop   # 停服务，保留数据库卷
+node scripts/cshell-local-real.mjs reset  # 停服务并清空数据库卷
 ```
+
+生成的本地管理员及测试账号凭据保存在 `artifacts/local-real/state.json`（文件权限 0600）；`start` 会显示登录所需凭据。不要提交或分享该文件。`stop` 保留数据，`reset` 删除数据卷，下一次 `start` 会重新初始化并创建测试账号。可用 `CSHELL_LOCAL_SUB2API_MODE=baseline-source` 选择固定源码基线；默认 `latest-image` 使用解析到 digest 的官方镜像。
+
+此本地循环不验证真实模型调用、支付/结算、邮件投递或 OAuth/Passkey 提供商。CI 另对固定后端源码与解析后的 latest 镜像 digest 执行真实 API 和浏览器矩阵。`scripts/mock-sub2api.mjs` 与 `scripts/proxy-smoke.mjs` 仅用于 Rust 反向代理的协议/线路单元测试，不是 UI 功能后端。
 
 ## 运行参数
 
@@ -83,7 +92,7 @@ GitHub Actions 在推送到 `main`、pull request、每日定时（`17 4 * * *`�
 
 分层如下：
 
-- **基础检查**：Rust 1.93.0 的 fmt / Clippy / test（`RUSTFLAGS=-D warnings`，`--locked`），Node.js 24 + pnpm 10.11.0 的 `web/` lint / typecheck / test / 生产构建与发布产物校验，CI 脚本的 `node --check` 与 `node --test`，代理冒烟测试，以及不推送的 Docker 镜像构建与镜像内容检查。
+- **基础检查**：Rust 1.93.0 的 fmt / Clippy / test（`RUSTFLAGS=-D warnings`，`--locked`），Node.js 24 + pnpm 10.11.0 的 `web/` lint / typecheck / test / 生产构建与发布产物校验，CI 脚本的 `node --check` 与 `node --test`（含 `scripts/cshell-local-real.test.mjs`），代理冒烟测试，以及不推送的 Docker 镜像构建与镜像内容检查。
 - **真实后端双版本兼容性**：`sub2api-integration` 与 `sub2api-browser` 各有两个矩阵项，`baseline-source` 用固定提交 `2af3f1e15c98c893a89255a037f551046883b8c0` 构建，`latest-image` 每轮解析 `docker.io/weishaw/sub2api:latest` 的 linux/amd64 digest 并用 `image@sha256:…` 启动。`fail-fast: false`，两组都跑同一套契约。
 - **聚合门槛**：`ci-required` 使用 `if: always()`，任一依赖 job 不是 `success`（含 `failure`、`cancelled`、`skipped`）即失败。把 `ci-required` 配为分支保护的必需检查；工作流不自行修改分支保护。
 

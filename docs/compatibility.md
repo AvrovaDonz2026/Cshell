@@ -1,6 +1,6 @@
 # 兼容性清单
 
-这份清单区分三类结论：**源码对齐**表示按固定上游提交核对了路径或协议；**mock 已测试**表示本仓库的本地模拟服务覆盖了请求字节和响应；**live 已验证**表示已在真实 Sub2API 实例上通过真实 HTTP 请求验证。没有把源码对齐写成真实服务已联通。
+这份清单区分两类结论：**源码对齐**表示按固定上游提交核对了路径或协议；**live 已验证**表示已在真实 Sub2API 实例上通过真实 HTTP 请求验证。源码对齐不代表真实服务已联通。
 
 ## 真实后端双版本 CI 门槛
 
@@ -110,7 +110,7 @@ value 型字段保持原值（`omittedSettingKeys`），所以只发送需要变
 
 **不做的真实外部动作**：不发送邮件（`email_verify_enabled=false` 且无 SMTP）、不调用真实验证码
 供应商、不配置真实支付 provider、不发起真实支付或模型调用。支付失败路径是在**禁用**状态下验证的
-拒绝语义；成功支付流程仍只由 mock 场景覆盖，两类结果在报告中分开。
+拒绝语义；真实支付成功与结算流程不在测试范围内。
 
 ## 真实协议检查（`scripts/sub2api-integration.mjs`）
 
@@ -202,12 +202,18 @@ harness-tests ──────────────────────
 
 支付源码对齐的用户接口包括 `/api/v1/payment/config`、`checkout-info`、`plans`、`limits`，订单创建、查询、取消、退款申请，以及 `/api/v1/payment/public/orders/verify`、`resolve`。通知路径包括 `/api/v1/payment/webhook/easypay`、`alipay`、`wxpay`、`stripe` 和 `airwallex`。管理员支付接口位于 `/api/v1/admin/payment/*`，继续由上游的管理员鉴权处理。
 
-## mock 合同覆盖
+## 本地真实后端与浏览器验收
 
-本地合同测试用 `scripts/mock-sub2api.mjs` / `scripts/cshell-web-fixture.mjs` 覆盖请求字节和
-响应形状，包括支付成功、`order_created`/`oauth_required`/`jsapi_ready` 结果类型、verify 与
-resolve 的不同响应类型。mock 结果**不能**替代真实兼容性结论；成功支付、真实邮件、真实验证码
-和真实 provider 只在 mock 中覆盖。
+本地功能 UI/浏览器测试只使用完整真实 Sub2API 后端，不使用 mock backend。统一通过
+`node scripts/cshell-local-real.mjs start|status|logs|stop|reset` 管理；Cshell 与上游分别只绑定
+`127.0.0.1:18080` 和 `127.0.0.1:18081`。此本地 profile 独立于 CI，不依赖 CI job 环境变量；上游使用
+每次解析并固定 digest 的最新官方镜像。凭据存于 `artifacts/local-real/state.json`（文件权限 0600），
+不要提交或复制该文件。`stop` 保留数据库卷，`reset` 删除数据库卷。
+
+CI 的真实后端功能浏览器测试仅由 `scripts/sub2api-browser.mjs` 执行；不使用 `cshell-web` fixture 或 preview。
+`scripts/mock-sub2api.mjs` 仅用于代理 wire/unit test，不是 UI 后端。
+
+本地与 CI 浏览器测试均不实际验证真实模型调用、支付结算、外发邮件、OAuth 提供商或验证码提供商。
 
 ## live 未验证的上线项
 
@@ -221,11 +227,10 @@ resolve 的不同响应类型。mock 结果**不能**替代真实兼容性结论
 
 ## 不在本次 CI 范围
 
-- 真实支付扣费、真实邮件投递、真实验证码供应商校验、真实模型推理调用。
+- 真实支付结算、真实邮件投递、OAuth/验证码提供商交互、真实模型推理调用。
 - 生产凭证：CI 只用临时随机凭证，不使用任何生产 secret。
 - 推送镜像、创建 release、修改分支保护。工作流只有 `contents: read`。
-- 浏览器闭环的真实后端覆盖由同级任务提供的 `scripts/sub2api-browser.mjs` 承担；本文件描述的后端矩阵
-  与 `sub2api-integration` 只覆盖 HTTP 协议层。
+- 浏览器闭环的真实后端覆盖由 `scripts/sub2api-browser.mjs` 承担；`sub2api-integration` 覆盖 HTTP 协议层，browser 脚本覆盖真实后端 UI。
 
 ## 发布前记录
 

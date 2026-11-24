@@ -1,6 +1,6 @@
 # Core API contracts for independent Cshell UI
 
-Wire evidence is classified below: pinned backend source inspection, existing integration coverage, and local mocks are distinct evidence classes. Baseline upstream: Sub2API commit `2af3f1e15c98c893a89255a037f551046883b8c0`. Paths are relative to same-origin `/api/v1`.
+Wire evidence is classified below: pinned backend source inspection, existing integration coverage, and isolated unit tests are distinct evidence classes. Baseline upstream: Sub2API commit `2af3f1e15c98c893a89255a037f551046883b8c0`. Paths are relative to same-origin `/api/v1`.
 
 ## Envelope
 
@@ -36,7 +36,7 @@ Pinned evidence (all links use the exact baseline):
 | GET | `/auth/me` | Bearer | `User` |
 | GET | `/settings/public` | public | site flags (`registration_enabled`, `payment_enabled`, `subscription_enabled`, `billing_currency`, …) |
 
-`captcha_provider` (`"turnstile"` \| `"mock"`) is a Cshell-side marker used only by the local web fixture/preview; it is not a claimed upstream field. Pinned upstream uses **`turnstile_enabled` and `turnstile_site_key`**, plus `tencent_captcha_enabled`/`tencent_captcha_app_id` and `aliyun_captcha_enabled`/scene/prefix/region; **`captcha_enabled` is not a proven pinned public setting**. Unsupported enabled providers must not silently bypass verification. Login and send-verify-code verify captcha; registration invokes `VerifyCaptchaForRegister` with `verify_code` to avoid reusing a one-time ticket in email-verification scenarios. The SPA treats registration and billing flags as fail-closed: they only enable after a successful `/settings/public` fetch and an explicit `true`.
+`captcha_provider` (`"turnstile"` \| `"mock"`) is a Cshell-side marker used only by the isolated captcha unit test; it is not a claimed upstream field. Pinned upstream uses **`turnstile_enabled` and `turnstile_site_key`**, plus `tencent_captcha_enabled`/`tencent_captcha_app_id` and `aliyun_captcha_enabled`/scene/prefix/region; **`captcha_enabled` is not a proven pinned public setting**. Unsupported enabled providers must not silently bypass verification. Login and send-verify-code verify captcha; registration invokes `VerifyCaptchaForRegister` with `verify_code` to avoid reusing a one-time ticket in email-verification scenarios. The SPA treats registration and billing flags as fail-closed: they only enable after a successful `/settings/public` fetch and an explicit `true`.
 
 ## Profile
 
@@ -96,9 +96,9 @@ The independent UI now uses `turnstile_enabled`, sends `turnstile_token` on logi
 
 Checkout accepts `order_created` URL/QR fields with `pay_amount`; URLs are validated and opened only on an explicit click. `oauth_required`/`jsapi_ready` are visibly unsupported and do not invoke OAuth, JSAPI, or claim payment. Verify and resolve have distinct types; resolve is normalized from status without requiring `paid`. Pending checkout recovery stores only the owner user id and numeric order id in per-tab session storage; authenticated order detail rehydrates status after refresh. It stores no password, resume token, provider URL, QR payload or client secret. Recovered checkout cannot resume a provider link unless the backend supplies a new supported flow; refresh/status/cancel remain available.
 
-Auth request structs and payment constants were independently rechecked through `gh` at the pinned commit during correction. Captcha/email/provider end-to-end behavior remains **UNVERIFIED** on a real deployment. Deterministic fixture/browser tests and a stubbed Turnstile API test prove local request/lifecycle behavior only. No external payment or email was performed.
+Auth request structs and payment constants were independently rechecked through `gh` at the pinned commit during correction. Captcha/email/provider end-to-end behavior remains **UNVERIFIED** on a real deployment. Isolated component unit tests and a stubbed Turnstile API test prove local request/lifecycle behavior only. No external payment or email was performed.
 
-Independent local mocks intentionally reject real checkout POSTs. Production payment providers remain separately verified.
+The Rust proxy protocol harness intentionally rejects unexpected checkout POSTs. Production payment providers remain separately verified.
 
 ## Pagination
 

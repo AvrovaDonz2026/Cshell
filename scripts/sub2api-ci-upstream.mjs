@@ -96,15 +96,55 @@ export function uniqueSuffix(env = process.env, random = () => randomBytes(4).to
   return suffix.slice(-40).replace(/^-+/, '') || 'local';
 }
 
-export function containerNames(suffix) {
+export const DEFAULT_NAME_PREFIX = 'cshell-sub2api-';
+
+export function containerNames(suffix, prefix = DEFAULT_NAME_PREFIX) {
   const clean = String(suffix).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'local';
   return {
-    network: `cshell-sub2api-net-${clean}`,
-    db: `cshell-sub2api-db-${clean}`,
-    redis: `cshell-sub2api-redis-${clean}`,
-    upstream: `cshell-sub2api-${clean}`,
-    dataVolume: `cshell-sub2api-data-${clean}`,
+    network: `${prefix}net-${clean}`,
+    db: `${prefix}db-${clean}`,
+    redis: `${prefix}redis-${clean}`,
+    upstream: `${prefix}${clean}`,
+    dataVolume: `${prefix}data-${clean}`,
   };
+}
+
+export function validateNamePrefix(prefix) {
+  const value = String(prefix ?? '');
+  if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(value) || !value.endsWith('-')) {
+    throw new Error(
+      `invalid container name prefix: ${JSON.stringify(prefix)}; expected lowercase letters/digits/dashes ending with "-"`,
+    );
+  }
+  return value;
+}
+
+// Stable names for a long-lived profile. Unlike containerNames(suffix) these carry
+// no per-run suffix, so a fresh `status`, `down` or `reset` process finds exactly
+// the same containers, network and data volume as the process that started them.
+export function fixedContainerNames(prefix) {
+  const base = validateNamePrefix(prefix);
+  const names = {
+    network: `${base}net`,
+    db: `${base}db`,
+    redis: `${base}redis`,
+    upstream: `${base}sub2api`,
+    dataVolume: `${base}data`,
+    // Only used when the DB is persisted; CI's tmpfs database has no such volume.
+    dbDataVolume: `${base}dbdata`,
+  };
+  for (const [kind, name] of Object.entries(names)) {
+    if (name.length > 63) throw new Error(`fixed ${kind} name ${name} exceeds the 63-character DNS limit`);
+  }
+  return names;
+}
+
+export function validateHostPort(port) {
+  const value = Number(port);
+  if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+    throw new Error(`invalid host port: ${JSON.stringify(port)}; expected an integer from 1024 to 65535`);
+  }
+  return value;
 }
 
 export function imageRefByDigest(repository, digest) {
@@ -428,6 +468,22 @@ function containerHealthy(engine, name) {
   return String(result.stdout || '').trim();
 }
 
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// `rm --force` can return while the engine is still releasing the name, which then
+// makes `run --name` fail with "name is already in use". Removing and then polling for
+// absence keeps a fixed-name profile recreatable from any state.
+export function removeContainer(engine, name) {
+  runEngine(engine, ['rm', '--force', '--volumes', name], { allowFailure: true, quiet: true });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (containerHealthy(engine, name) === 'missing') return true;
+    sleepSync(250);
+  }
+  return containerHealthy(engine, name) === 'missing';
+}
+
 async function waitForContainer(engine, name, { timeoutMs = 120_000, intervalMs = 2_000 } = {}) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -477,10 +533,31 @@ export function parseArgs(argv) {
   return options;
 }
 
-async function provision({ engine, mode, names, dbPassword, adminEmail, adminPassword, jwtSecret, imageReference, timings }) {
+async function provision({
+  engine,
+  mode,
+  names,
+  dbPassword,
+  adminEmail,
+  adminPassword,
+  jwtSecret,
+  imageReference,
+  timings,
+  hostPort: requestedHostPort = null,
+  persistDbData = false,
+}) {
   const created = [];
-  // The suffix is randomized, so a pre-existing network means a stale resource is in
-  // the way; remove it rather than failing on a name collision.
+  // A randomized suffix never collides, so a pre-existing network there means a stale
+  // resource is in the way. A fixed local profile reuses the same names every run, so
+  // any surviving containers from an earlier (possibly partial) start must go first or
+  // `run --name` fails on the name conflict.
+  for (const container of [names.upstream, names.redis, names.db]) {
+    if (container && !removeContainer(engine, container)) {
+      throw new Error(`could not free container name ${container}; remove it manually and retry`);
+    }
+  }
+  // The DB password is supplied by the caller for a persisted local profile, so the
+  // volume must survive restarts; an empty database is produced by `wipe-data`/`reset`.
   runEngine(engine, ['network', 'rm', '--force', names.network], { allowFailure: true, quiet: true });
   runEngine(engine, ['network', 'create', '--driver', 'bridge', names.network]);
 
@@ -496,7 +573,9 @@ async function provision({ engine, mode, names, dbPassword, adminEmail, adminPas
     '-e', 'POSTGRES_USER=sub2api',
     '-e', `POSTGRES_PASSWORD=${dbPassword}`,
     '-e', 'POSTGRES_DB=sub2api',
-    '--tmpfs', '/var/lib/postgresql/data:rw',
+    ...(persistDbData && names.dbDataVolume
+      ? ['--volume', `${names.dbDataVolume}:/var/lib/postgresql/data`]
+      : ['--tmpfs', '/var/lib/postgresql/data:rw']),
     POSTGRES_IMAGE,
   ]);
   created.push(names.db);
@@ -519,12 +598,15 @@ async function provision({ engine, mode, names, dbPassword, adminEmail, adminPas
   const redisHealth = await waitForContainer(engine, names.redis);
   if (!redisHealth.ok) throw new Error(`redis container did not become healthy (state: ${redisHealth.state})`);
 
+  const publish = requestedHostPort
+    ? `127.0.0.1:${validateHostPort(requestedHostPort)}:${UPSTREAM_INTERNAL_PORT}`
+    : `127.0.0.1::${UPSTREAM_INTERNAL_PORT}`;
   runEngine(engine, [
     'run', '--detach',
     '--name', names.upstream,
     '--network', names.network,
     '--network-alias', 'sub2api',
-    '--publish', `127.0.0.1::${UPSTREAM_INTERNAL_PORT}`,
+    '--publish', publish,
     '--tmpfs', '/tmp',
     '--tmpfs', '/run',
     '--volume', `${names.dataVolume}:/app/data`,
@@ -599,16 +681,19 @@ async function commandUp(options, env) {
   const mode = options.mode || env.SUB2API_MODE || 'baseline-source';
   if (mode !== 'baseline-source' && mode !== 'latest-image') throw new Error(`unknown mode: ${mode}`);
   const engine = containerEngine(env);
-  const suffix = options.suffix || uniqueSuffix(env);
-  const names = containerNames(suffix);
+  const namesPrefix = options['names-prefix'] || env.SUB2API_NAMES_PREFIX;
+  const suffix = namesPrefix ? 'fixed' : options.suffix || env.SUB2API_SUFFIX || uniqueSuffix(env);
+  const names = namesPrefix ? fixedContainerNames(namesPrefix) : containerNames(suffix);
+  const requestedHostPort = options['host-port'] || env.SUB2API_HOST_PORT;
+  const persistDbData = options['persist-db'] === true || String(env.SUB2API_PERSIST_DB || '') === '1';
   const manifestPath = resolve(options.manifest || defaultManifestPath(env));
   const nodeOptions = options['node-options'] || env.SUB2API_BUILD_NODE_OPTIONS || DEFAULT_BUILD_NODE_OPTIONS;
   const adminEmail = options['admin-email'] || env.SUB2API_ADMIN_EMAIL || env.ADMIN_EMAIL;
   const adminPassword = options['admin-password'] || env.SUB2API_ADMIN_PASSWORD || env.ADMIN_PASSWORD;
   if (!adminEmail || !adminPassword) throw new Error('SUB2API_ADMIN_EMAIL and SUB2API_ADMIN_PASSWORD are required for up');
 
-  const dbPassword = randomBytes(18).toString('base64url');
-  const jwtSecret = randomBytes(32).toString('hex');
+  const dbPassword = options['db-password'] || env.SUB2API_DB_PASSWORD || randomBytes(18).toString('base64url');
+  const jwtSecret = options['jwt-secret'] || env.SUB2API_JWT_SECRET || randomBytes(32).toString('hex');
   const timings = { resolveMs: 0, buildMs: 0, provisionMs: 0, healthMs: 0 };
 
   // Written up-front so a failed run still leaves a manifest naming the containers
@@ -620,6 +705,8 @@ async function commandUp(options, env) {
     engine,
     engineVersion: engineVersion(engine),
     suffix,
+    namesPrefix: namesPrefix || null,
+    persistDbData,
     names,
     network: names.network,
     dataVolume: names.dataVolume,
@@ -669,7 +756,17 @@ async function commandUp(options, env) {
   let provisioned;
   try {
     provisioned = await provision({
-      engine, mode, names, dbPassword, adminEmail, adminPassword, jwtSecret, imageReference, timings,
+      engine,
+      mode,
+      names,
+      dbPassword,
+      adminEmail,
+      adminPassword,
+      jwtSecret,
+      imageReference,
+      timings,
+      hostPort: requestedHostPort,
+      persistDbData,
     });
   } catch (error) {
     timings.provisionMs = Date.now() - provisionStarted;
@@ -697,25 +794,67 @@ async function commandUp(options, env) {
   return { ...manifest, manifestPath };
 }
 
-async function cleanupResources(engine, names) {
+async function cleanupResources(engine, names, { keepData = false } = {}) {
   const removed = [];
   for (const container of [names.upstream, names.redis, names.db]) {
     if (!container) continue;
     const result = runEngine(engine, ['rm', '--force', '--volumes', container], { allowFailure: true, quiet: true });
     removed.push({ container, removed: result.status === 0 });
   }
-  if (names.dataVolume) runEngine(engine, ['volume', 'rm', '--force', names.dataVolume], { allowFailure: true, quiet: true });
+  let dataVolumeRemoved = false;
+  if (names.dataVolume && !keepData) {
+    const result = runEngine(engine, ['volume', 'rm', '--force', names.dataVolume], { allowFailure: true, quiet: true });
+    dataVolumeRemoved = result.status === 0;
+  }
+  // Both volumes are only dropped when the caller asks for a real wipe; a `down
+  // --keep-data` restart must preserve the database or the next `up` cannot log in.
+  const dbDataVolumeRemoved =
+    names.dbDataVolume && !keepData
+      ? runEngine(engine, ['volume', 'rm', '--force', names.dbDataVolume], { allowFailure: true, quiet: true }).status === 0
+      : false;
   if (names.network) runEngine(engine, ['network', 'rm', '--force', names.network], { allowFailure: true, quiet: true });
-  return removed;
+  return { removed, dataVolumeRemoved, dbDataVolumeRemoved, dataVolumeKept: Boolean(names.dataVolume) && keepData };
 }
 
 async function commandDown(options, env) {
   const manifestPath = resolve(options.manifest || defaultManifestPath(env));
   const manifest = await readManifestFile(manifestPath);
   const engine = containerEngine(env);
-  const names = manifest?.names || containerNames(options.suffix || uniqueSuffix(env));
-  const removed = await cleanupResources(engine, names);
-  return { engine, removed, network: names.network, manifestPath, mode: manifest?.mode || null };
+  const namesPrefix = options['names-prefix'] || env.SUB2API_NAMES_PREFIX || manifest?.namesPrefix;
+  const names = namesPrefix
+    ? fixedContainerNames(namesPrefix)
+    : manifest?.names || containerNames(options.suffix || uniqueSuffix(env));
+  const keepData = options['keep-data'] === true || String(env.SUB2API_KEEP_DATA || '') === '1';
+  const cleanup = await cleanupResources(engine, names, { keepData });
+  return { engine, ...cleanup, network: names.network, dataVolume: names.dataVolume, keepData, manifestPath, mode: manifest?.mode || null };
+}
+
+// Remove the upstream data volume so a later `up` starts with an empty database.
+// The containers and network are expected to be gone already; running this after a
+// `down --keep-data` is the reset path.
+async function commandWipeData(options, env) {
+  const manifestPath = resolve(options.manifest || defaultManifestPath(env));
+  const manifest = await readManifestFile(manifestPath);
+  const engine = containerEngine(env);
+  const namesPrefix = options['names-prefix'] || env.SUB2API_NAMES_PREFIX || manifest?.namesPrefix;
+  const names = namesPrefix
+    ? fixedContainerNames(namesPrefix)
+    : manifest?.names || containerNames(options.suffix || uniqueSuffix(env));
+  if (!names.dataVolume) throw new Error('no data volume name could be resolved for wipe-data');
+  const volumeResult = runEngine(engine, ['volume', 'rm', '--force', names.dataVolume], { allowFailure: true, quiet: true });
+  // A persisted local profile also has a database volume; wiping only the upstream
+  // data volume would leave a stale schema/credentials behind.
+  const dbVolumeResult = names.dbDataVolume
+    ? runEngine(engine, ['volume', 'rm', '--force', names.dbDataVolume], { allowFailure: true, quiet: true })
+    : null;
+  return {
+    engine,
+    dataVolume: names.dataVolume,
+    removed: volumeResult.status === 0,
+    dbDataVolume: names.dbDataVolume ?? null,
+    dbDataVolumeRemoved: dbVolumeResult ? dbVolumeResult.status === 0 : false,
+    manifestPath,
+  };
 }
 
 async function commandManifest(options, env) {
@@ -894,6 +1033,7 @@ const COMMANDS = {
   down: commandDown,
   manifest: commandManifest,
   configure: commandConfigure,
+  'wipe-data': commandWipeData,
 };
 
 export async function main(argv = process.argv.slice(2), env = process.env) {

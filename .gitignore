@@ -17,3 +17,6 @@
 .vscode/
 
 /.vite/
+
+# Local real-backend loop state: generated credentials live here. Never commit.
+/artifacts/local-real/

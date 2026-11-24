@@ -140,9 +140,12 @@ jobs:
         run: |
           node --check scripts/sub2api-ci-upstream.mjs
           node --check scripts/sub2api-integration.mjs
+          node --check scripts/cshell-local-real.mjs
 
       - name: Unit-test harness helpers
-        run: node --test scripts/sub2api-ci-upstream.test.mjs
+        run: |
+          node --test scripts/sub2api-ci-upstream.test.mjs
+          node --test scripts/cshell-local-real.test.mjs
 
   proxy-smoke:
     name: Proxy smoke test
@@ -397,6 +400,7 @@ jobs:
             | tee "$RUNNER_TEMP/sub2api-up.json"
           node scripts/sub2api-ci-upstream.mjs configure --manifest "$SUB2API_MANIFEST" \
             | tee "$RUNNER_TEMP/sub2api-configure.json"
+          node --input-type=module -e 'import{readFileSync,appendFileSync}from"node:fs";const m=JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8"));appendFileSync(process.env.GITHUB_ENV,`SUB2API_UPSTREAM_ID=${m.imageReference || m.commit || "unknown"}\n`)'
 
       - name: Register the browser test user through the real backend
         run: |
@@ -443,6 +447,7 @@ jobs:
           SUB2API_TEST_PASSWORD="$SUB2API_TEST_PASSWORD" \
           SUB2API_ADMIN_EMAIL="$SUB2API_ADMIN_EMAIL" \
           SUB2API_ADMIN_PASSWORD="$SUB2API_ADMIN_PASSWORD" \
+          SUB2API_UPSTREAM_ID="$SUB2API_UPSTREAM_ID" \
             node scripts/sub2api-browser.mjs | tee "$RUNNER_TEMP/sub2api-browser.json"
 
       - name: Collect sanitized diagnostics and tear down

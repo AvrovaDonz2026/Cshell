@@ -18,18 +18,18 @@ This inventory supports the independent `web/` frontend. It records material cla
 | `src/`, `tests/`, `Cargo.toml`, `Cargo.lock` | Original | Rust reverse proxy |
 | `web/` source and tests | Original (migration authorship claim; not legal clearance) | Independent user SPA; see `web/docs/web-third-party.md` for npm deps |
 | `web/dist/` | Mixed original + third-party build of `web/` | Produced by `pnpm --dir web run build` |
-| `scripts/cshell-web-*.mjs`, `scripts/proxy-smoke.mjs`, `scripts/mock-sub2api.mjs`, `scripts/sub2api-integration.mjs` | Original | Preview/acceptance and protocol checks |
+| `scripts/cshell-local-real.mjs`, `scripts/sub2api-browser.mjs`, `scripts/proxy-smoke.mjs`, `scripts/mock-sub2api.mjs`, `scripts/sub2api-integration.mjs` | Original | Real-backend acceptance and protocol checks |
 | `LICENSE`, `HISTORY-LICENSE.md` | Original notices | MIT for current originals; history note for past LGPL ships |
 | Vue / npm / Rust crates | Third-party | See `web/pnpm-lock.yaml` and `Cargo.lock` |
 | `2shell.jpeg` (repo root and `web/public/`) | Cshell brand, used with owner confirmation | Donz confirmed on 2026-11-23 that the asset is original or covered by sufficient rights. This records the owner's confirmation; it is not an independent legal clearance. |
 | Sub2API runtime | Separate product | Not shipped as Cshell source inside the image |
 
-## Historical (removed from working tree; retained in git)
+## Historical source provenance
 
 | Path / object | Class | Notes |
 |---------------|-------|-------|
 | Former `frontend/` (source, `LICENSE`, `UPSTREAM.md`, dist) | Upstream-derived | Removed from current tree; see `HISTORY-LICENSE.md` |
-| Former `scripts/workspace-*.mjs` | Original tooling | Superseded by `scripts/cshell-web-*.mjs`; deleted to avoid broken `frontend/` paths |
+
 | Historical git objects containing `frontend/` | Upstream-derived history | Not rewritten; past LGPL obligations for past distributions remain |
 
 ## Core feature boundary (first independent release)
