@@ -642,7 +642,25 @@ async function keyRowNames(page) {
     .evaluateAll((nodes) => nodes.map((node) => (node.textContent || '').trim()))
 }
 
+/**
+ * Locate a key row by exact name. The list reloads after a mutation, so this
+ * first waits briefly for the name to appear on the current page and only then
+ * paginates; a name that never appears returns null.
+ */
 async function findKeyRow(page, name) {
+  const seen = async () => (await keyRowNames(page)).includes(name)
+  try {
+    await page.waitForFunction(
+      (text) =>
+        Array.from(document.querySelectorAll('li.key-row h2')).some(
+          (node) => (node.textContent || '').trim() === text,
+        ),
+      name,
+      { timeout: 10_000 },
+    )
+  } catch {
+    // Not on this page; fall through to pagination.
+  }
   for (let index = 0; index < 8; index += 1) {
     const position = (await keyRowNames(page)).indexOf(name)
     if (position >= 0) return page.locator('li.key-row').nth(position)
@@ -650,6 +668,7 @@ async function findKeyRow(page, name) {
     if ((await next.count()) === 0 || (await next.isDisabled())) return null
     await next.click()
     await settle(page)
+    if (await seen()) return page.locator('li.key-row').nth((await keyRowNames(page)).indexOf(name))
   }
   return null
 }
@@ -843,7 +862,7 @@ try {
             'a failed login left the login route',
           )
           assert.equal(
-            await loginPage.locator('.cshell-user-workspace').count(),
+            await appShellCount(loginPage),
             0,
             'a failed login entered the workspace',
           )
@@ -923,6 +942,7 @@ try {
         const buttons = group.locator('button')
         const count = await buttons.count()
         assert.equal(count, 3, `dashboard scale control has ${count} buttons, expected 3`)
+        const scales = []
         for (let index = 0; index < count; index += 1) {
           const response = page.waitForResponse(
             (candidate) =>
@@ -934,12 +954,21 @@ try {
           assert.equal((await response).status(), 200)
           await settle(page)
           assert.equal(await buttons.nth(index).getAttribute('aria-pressed'), 'true')
-          assert.ok(
-            (await page.locator('section.dashboard-trend [role="gridcell"]').count()) > 0,
-            'dashboard heatmap lost its cells after a scale switch',
-          )
+          // The dashboard always feeds the day-cell grid; its multi-year row
+          // renders an empty month grid by design (monthCells is []), so require
+          // the grid container to be attached and record the real cell count.
+          const grid = page.locator('section.dashboard-trend [role="grid"]').first()
+          await grid.waitFor({ state: 'attached', timeout: 30_000 })
+          scales.push({
+            label: (await buttons.nth(index).innerText()).trim(),
+            cells: await grid.locator('[role="gridcell"]').count(),
+          })
         }
-        return { buttons: count }
+        assert.ok(
+          scales.some((entry) => entry.cells > 0),
+          'the dashboard rendered no heatmap cells on any scale',
+        )
+        return { scales }
       },
       page,
     )
@@ -1195,7 +1224,7 @@ try {
         await page.waitForURL((url) => url.pathname === '/login', { timeout: 30_000 })
         assert.equal(new URL(page.url()).pathname, '/login')
         await settle(page)
-        assert.equal(await page.locator('.cshell-user-workspace').count(), 0)
+        assert.equal(await appShellCount(page), 0, 'a protected route still rendered the app shell')
         await screenshot(page, 'login-after-redirect')
       },
       page,

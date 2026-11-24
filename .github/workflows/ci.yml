@@ -23,6 +23,10 @@ env:
   NODE_VERSION: 24
   # Upstream frontend builds OOM at the runner default heap (exit 134); bound it.
   SUB2API_BUILD_NODE_OPTIONS: "--max-old-space-size=4096"
+  # Provisioning and configuring the real Sub2API container requires an admin
+  # account (AUTO_SETUP creates it); CI-only throwaway credentials.
+  SUB2API_ADMIN_EMAIL: cshell-admin-ci@example.invalid
+  SUB2API_ADMIN_PASSWORD: CshellCI-only-admin-password-456
 
 jobs:
   rust:
@@ -305,6 +309,11 @@ jobs:
         with:
           name: cshell-web-dist-${{ github.sha }}
           path: web-dist
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Install Playwright Chromium
         run: |
