@@ -13,11 +13,10 @@
 // stderr so stdout stays machine-readable.
 
 import { spawnSync } from 'node:child_process';
-import { createServer } from 'node:net';
-import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
@@ -30,8 +29,10 @@ export const REGISTRY_REPOSITORY = 'weishaw/sub2api';
 export const DEFAULT_PLATFORM = { os: 'linux', architecture: 'amd64' };
 export const UPSTREAM_INTERNAL_PORT = 18081;
 export const DEFAULT_BUILD_NODE_OPTIONS = '--max-old-space-size=4096';
-export const POSTGRES_IMAGE = 'postgres:16';
-export const REDIS_IMAGE = 'redis:7';
+// Fully qualified so podman (which has no default short-name registry configured on
+// some hosts) resolves the same images as docker.
+export const POSTGRES_IMAGE = 'docker.io/library/postgres:16';
+export const REDIS_IMAGE = 'docker.io/library/redis:7';
 export const MANIFEST_SCHEMA_VERSION = 1;
 
 const SECRET_ENV_KEYS = [
@@ -46,9 +47,10 @@ const SECRET_ENV_KEYS = [
 ];
 
 const SECRET_PATTERNS = [
-  [/((?:password|passwd|secret|token|api[_-]?key|authorization))(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)/gi, '$1$2[REDACTED]'],
+  // Bearer tokens first: the assignment rule below would otherwise consume the
+  // "Bearer" keyword and leave the credential text dangling after it.
   [/(bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]'],
-  [/(sha256:)[0-9a-f]{64}/gi, '$1[REDACTED]'],
+  [/((?:password|passwd|secret|token|api[_-]?key|authorization))(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)/gi, '$1$2[REDACTED]'],
 ];
 
 export function defaultSecretValues(env = process.env) {
@@ -107,7 +109,7 @@ export function containerNames(suffix) {
 
 export function imageRefByDigest(repository, digest) {
   const cleanRepository = String(repository || '').replace(/\/+$/, '');
-  if (!cleanRepository || /[@\s]/.test(cleanRepository)) throw new Error(`invalid image repository: ${repository}`);
+  if (!cleanRepository || /[@:\s]/.test(cleanRepository)) throw new Error(`invalid image repository: ${repository}`);
   if (!/^sha256:[0-9a-f]{64}$/.test(String(digest || ''))) throw new Error(`invalid image digest: ${digest}`);
   return `${cleanRepository}@${digest}`;
 }
@@ -448,7 +450,7 @@ function defaultManifestPath(env = process.env) {
 }
 
 async function writeManifest(path, manifest) {
-  await mkdir(resolve(path, '..'), { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
@@ -470,12 +472,6 @@ export function parseArgs(argv) {
     }
   }
   return options;
-}
-
-function requiredEnv(env, key) {
-  const value = env[key];
-  if (!value) throw new Error(`${key} is required`);
-  return value;
 }
 
 async function provision({ engine, mode, names, dbPassword, adminEmail, adminPassword, jwtSecret, imageReference, timings }) {
