@@ -6,6 +6,7 @@ import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import Button from '@/components/primitives/Button.vue'
 import { logoUrl } from '@/lib/assets'
+import { acquireBodyScrollLock, releaseBodyScrollLock } from '@/lib/dialogContext'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
@@ -136,17 +137,12 @@ function setMainInert(inert: boolean): void {
   else main.removeAttribute('inert')
 }
 
-function lockBodyScroll(lock: boolean): void {
-  if (typeof document === 'undefined') return
-  document.body.style.overflow = lock ? 'hidden' : ''
-}
-
 function openDrawer(): void {
   const active = document.activeElement as HTMLElement | null
   lastFocus.value = active && active !== document.body ? active : null
   drawerOpen.value = true
   setMainInert(true)
-  lockBodyScroll(true)
+  acquireBodyScrollLock()
   nextTick(() => {
     const first = focusableIn(drawerRef.value)[0]
     ;(first ?? drawerRef.value)?.focus()
@@ -157,7 +153,7 @@ function closeDrawer(): void {
   if (!drawerOpen.value) return
   drawerOpen.value = false
   setMainInert(false)
-  lockBodyScroll(false)
+  releaseBodyScrollLock()
   accountOpen.value = false
   nextTick(() => {
     ;(lastFocus.value ?? triggerRef.value)?.focus()
@@ -268,7 +264,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDrawerKeydown)
   document.removeEventListener('mousedown', onDocumentPointerDown)
   setMainInert(false)
-  lockBodyScroll(false)
+  if (drawerOpen.value) releaseBodyScrollLock()
 })
 </script>
 

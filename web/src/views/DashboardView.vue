@@ -2,12 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { fetchSubscriptionSummary } from '@/api/billing'
+import { fetchMyOrders, fetchSubscriptionSummary } from '@/api/billing'
+import { fetchKeys } from '@/api/keys'
 import { fetchDashboardStats, fetchUsageTrend } from '@/api/usage'
 import { buildHeatmapDays, buildYearMonthLabels, defaultRangeForScale, weekCountForDays, type HeatmapScale } from '@/utils/heatmap'
 import HeatmapGrid from '@/components/user/HeatmapGrid.vue'
 import type { TrendPoint } from '@/api/types'
-import type { DashboardStats, SubscriptionSummary } from '@/api/types'
+import type { ApiKey, DashboardStats, SubscriptionSummary } from '@/api/types'
 import { ApiError } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -108,6 +109,42 @@ const activeSubscriptions = computed(
   () => subscription.value?.active_count ?? null,
 )
 
+/** Welcome text falls back to the email local-part when no username exists. */
+const displayName = computed(() => auth.user?.username || auth.user?.email || '')
+
+/** Real, client-side filtered pending counts. Nothing here is fabricated. */
+const pendingOrdersCount = ref<number | null>(null)
+const pendingKeysCount = ref<number | null>(null)
+
+/** Keys expiring within 7 days (or already expired but still listed). */
+const EXPIRY_WINDOW_DAYS = 7
+const EXPIRY_WINDOW_MS = EXPIRY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+function isExpiringSoon(key: ApiKey): boolean {
+  if (!key.expires_at) return false
+  const expiresAt = Date.parse(key.expires_at)
+  if (!Number.isFinite(expiresAt)) return false
+  return expiresAt <= Date.now() + EXPIRY_WINDOW_MS
+}
+
+async function loadPending(): Promise<void> {
+  // Failures degrade to "unknown" (—) instead of breaking the dashboard.
+  fetchMyOrders(1, 20, { status: 'PENDING' })
+    .then((result) => {
+      pendingOrdersCount.value = result.total ?? result.items?.length ?? 0
+    })
+    .catch(() => {
+      pendingOrdersCount.value = null
+    })
+  fetchKeys(1, 100)
+    .then((result) => {
+      pendingKeysCount.value = (result.items || []).filter(isExpiringSoon).length
+    })
+    .catch(() => {
+      pendingKeysCount.value = null
+    })
+}
+
 function setDashboardScale(scale: HeatmapScale): void {
   dashboardScale.value = scale
   const range = defaultRangeForScale(scale)
@@ -180,6 +217,13 @@ watch(
   { immediate: true },
 )
 
+/** Refresh every dashboard data source; failures degrade, never break the page. */
+async function refreshAll(): Promise<void> {
+  await loadStats()
+  await loadDashboardTrend()
+  void loadPending()
+}
+
 onMounted(() => {
   const range = defaultRangeForScale('month')
   dashboardDraftStart.value = range.start
@@ -187,6 +231,7 @@ onMounted(() => {
   dashboardStart.value = range.start
   dashboardEnd.value = range.end
   void loadStats().then(() => loadDashboardTrend())
+  void loadPending()
 })
 </script>
 
@@ -198,6 +243,14 @@ onMounted(() => {
         <p class="page__subtitle">
           {{ t('dashboard.subtitle') }}
         </p>
+      </div>
+      <div class="page__welcome">
+        <span v-if="displayName" class="page__welcome-text">
+          {{ t('dashboard.welcome', { username: displayName }) }}
+        </span>
+        <button type="button" class="page__refresh" @click="refreshAll">
+          {{ t('dashboard.refresh') }}
+        </button>
       </div>
     </header>
 
@@ -225,6 +278,9 @@ onMounted(() => {
               <dt class="metric__caption">{{ item.label }}</dt>
             </div>
           </dl>
+          <p v-if="!stats.today_requests && !stats.today_tokens && !stats.today_cost && !stats.today_actual_cost" class="empty-state" role="status">
+            {{ t('dashboard.emptyState') }}
+          </p>
         </section>
 
         <section class="usage-block dashboard-trend" aria-labelledby="dashboard-trend-title">
@@ -243,7 +299,7 @@ onMounted(() => {
           <p class="section-caption" role="status">{{ dashboardStart }} — {{ dashboardEnd }} · {{ Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }}</p>
           <p v-if="dashboardLoading" role="status" class="state">{{ t('common.loading') }}</p>
           <p v-else-if="dashboardError" role="alert" class="error">{{ dashboardError }}</p>
-          <HeatmapGrid v-else :scale="dashboardScale" :hour-cells="[]" :day-cells="dashboardCells" :month-cells="[]" :week-count="dashboardWeeks" :month-labels="dashboardLabels" :weekday-labels="[t('usage.weekdays.sun'), t('usage.weekdays.mon'), t('usage.weekdays.tue'), t('usage.weekdays.wed'), t('usage.weekdays.thu'), t('usage.weekdays.fri'), t('usage.weekdays.sat')]" :max-value="dashboardMax" :metric="dashboardMetric" :translate="t" />
+          <HeatmapGrid v-else compact :scale="dashboardScale" :hour-cells="[]" :day-cells="dashboardCells" :month-cells="[]" :week-count="dashboardWeeks" :month-labels="dashboardLabels" :weekday-labels="[t('usage.weekdays.sun'), t('usage.weekdays.mon'), t('usage.weekdays.tue'), t('usage.weekdays.wed'), t('usage.weekdays.thu'), t('usage.weekdays.fri'), t('usage.weekdays.sat')]" :max-value="dashboardMax" :metric="dashboardMetric" :translate="t" />
         </section>
 
         <section class="totals" :aria-labelledby="'dash-totals-title'">
@@ -262,32 +318,25 @@ onMounted(() => {
             </article>
           </div>
         </section>
-
-        <section class="quick" :aria-label="t('dashboard.quickLinks')">
-          <h2 class="section-title">{{ t('dashboard.quickLinks') }}</h2>
-          <div class="quick__row">
-            <RouterLink class="quick__link" :to="{ name: 'usage' }">
-              {{ t('dashboard.linkUsage') }}
-            </RouterLink>
-            <RouterLink class="quick__link" :to="{ name: 'keys' }">
-              {{ t('dashboard.linkKeys') }}
-            </RouterLink>
-            <RouterLink
-              v-if="settings.paymentEnabled || settings.subscriptionEnabled"
-              class="quick__link"
-              :to="{ name: 'purchase' }"
-            >
-              {{ t('dashboard.linkPurchase') }}
-            </RouterLink>
-          </div>
-        </section>
       </div>
 
       <aside class="rail" :aria-label="t('dashboard.railLabel')">
         <article class="rail-card">
           <h2 class="rail-card__title">{{ t('dashboard.balanceTitle') }}</h2>
-          <p class="rail-card__value">{{ balanceText }}</p>
+          <p class="rail-card__value rail-card__value--big">{{ balanceText }}</p>
           <p class="rail-card__caption">{{ t('dashboard.balanceCaption') }}</p>
+          <div class="rail-card__links">
+            <RouterLink class="rail-card__link" :to="{ name: 'profile' }">
+              {{ t('dashboard.balanceDetail') }}
+            </RouterLink>
+            <RouterLink
+              v-if="settings.paymentEnabled"
+              class="rail-card__link"
+              :to="{ name: 'purchase' }"
+            >
+              {{ t('dashboard.balanceRecharge') }}
+            </RouterLink>
+          </div>
         </article>
 
         <article v-if="settings.subscriptionEnabled" class="rail-card">
@@ -302,26 +351,53 @@ onMounted(() => {
             }}
           </p>
           <p class="rail-card__caption">{{ t('dashboard.planCaption') }}</p>
-          <RouterLink class="rail-card__link" :to="{ name: 'subscriptions' }">
-            {{ t('dashboard.linkSubscriptions') }}
-          </RouterLink>
+          <div class="rail-card__links">
+            <RouterLink class="rail-card__link" :to="{ name: 'subscriptions' }">
+              {{ t('dashboard.linkSubscriptions') }}
+            </RouterLink>
+          </div>
+        </article>
+
+        <article class="rail-card" :aria-labelledby="'dash-pending-title'">
+          <h2 id="dash-pending-title" class="rail-card__title">
+            {{ t('dashboard.pendingTitle') }}
+          </h2>
+          <p class="rail-card__caption">{{ t('dashboard.pendingCaption') }}</p>
+          <ul class="pending-list">
+            <li class="pending-list__row">
+              <span class="pending-list__label">
+                {{ t('dashboard.pendingOrders') }}
+              </span>
+              <RouterLink class="pending-list__value" :to="{ name: 'orders' }">
+                {{ pendingOrdersCount === null ? '—' : pendingOrdersCount }}
+              </RouterLink>
+            </li>
+            <li class="pending-list__row">
+              <span class="pending-list__label">
+                {{ t('dashboard.pendingKeys') }}
+              </span>
+              <RouterLink class="pending-list__value" :to="{ name: 'keys' }">
+                {{ pendingKeysCount === null ? '—' : pendingKeysCount }}
+              </RouterLink>
+            </li>
+          </ul>
+          <p
+            v-if="pendingOrdersCount === 0 && pendingKeysCount === 0"
+            class="pending-list__empty"
+            role="status"
+          >
+            {{ t('dashboard.pendingEmpty') }}
+          </p>
         </article>
 
         <article class="rail-card">
-          <h2 class="rail-card__title">{{ t('dashboard.quickLinks') }}</h2>
+          <h2 class="rail-card__title">{{ t('dashboard.helpTitle') }}</h2>
           <div class="rail-card__links">
-            <RouterLink class="rail-card__link" :to="{ name: 'keys' }">
-              {{ t('dashboard.linkKeys') }}
-            </RouterLink>
             <RouterLink class="rail-card__link" :to="{ name: 'profile' }">
-              {{ t('dashboard.linkProfile') }}
+              {{ t('dashboard.helpProfile') }}
             </RouterLink>
-            <RouterLink
-              v-if="settings.paymentEnabled || settings.subscriptionEnabled"
-              class="rail-card__link"
-              :to="{ name: 'orders' }"
-            >
-              {{ t('dashboard.linkOrders') }}
+            <RouterLink class="rail-card__link" :to="{ name: 'dashboard' }">
+              {{ t('dashboard.helpOverview') }}
             </RouterLink>
           </div>
         </article>
@@ -337,6 +413,14 @@ onMounted(() => {
   min-width: 0;
 }
 
+.page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .page__head-text {
   display: grid;
   gap: 0.3rem;
@@ -344,8 +428,37 @@ onMounted(() => {
 
 .page h1 {
   margin: 0;
-  font-size: var(--cshell-type-page);
+  font-size: var(--cshell-type-page-lg);
+  line-height: var(--cshell-leading-page-lg);
   letter-spacing: -0.01em;
+}
+
+.page__welcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.page__welcome-text {
+  font-size: var(--cshell-type-body);
+  color: var(--cshell-text-muted);
+}
+
+.page__refresh {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: var(--cshell-radius-control);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-surface);
+  color: var(--cshell-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.page__refresh:hover {
+  border-color: var(--cshell-accent);
 }
 
 .page__subtitle {
@@ -381,8 +494,8 @@ onMounted(() => {
 .usage-block {
   display: grid;
   gap: 1.1rem;
-  padding: var(--cshell-panel-padding);
-  border-radius: var(--cshell-radius-panel);
+  padding: var(--cshell-panel-padding-lg);
+  border-radius: var(--cshell-radius-panel-lg);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
   min-width: 0;
@@ -391,7 +504,6 @@ onMounted(() => {
 .dashboard-filters { display:flex; flex-wrap:wrap; gap:.5rem; align-items:end; }
 .dashboard-filters label { display:grid; gap:.2rem; font-size:.75rem; color:var(--cshell-text-muted); }
 .dashboard-filters button { min-height:2rem; }
-.dashboard-trend :deep(.day-layout) { min-width:18rem; }
 .usage-block__head {
   display: grid;
   gap: 0.1rem;
@@ -428,6 +540,10 @@ onMounted(() => {
 .totals {
   display: grid;
   gap: 0.85rem;
+  padding: var(--cshell-panel-padding-lg);
+  border-radius: var(--cshell-radius-panel-lg);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-surface);
   min-width: 0;
 }
 
@@ -446,7 +562,7 @@ onMounted(() => {
   padding: 1rem 1.1rem;
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
-  background: var(--cshell-surface);
+  background: var(--cshell-bg-elevated);
   min-width: 0;
 }
 
@@ -464,38 +580,17 @@ onMounted(() => {
   color: var(--cshell-text-muted);
 }
 
-.quick {
-  display: grid;
-  gap: 0.7rem;
-}
-
-.quick__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.quick__link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.5rem;
-  padding: 0.4rem 0.9rem;
-  border-radius: var(--cshell-radius-control);
-  background: var(--cshell-surface);
-  border: 1px solid var(--cshell-border);
-  color: var(--cshell-text);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.quick__link:hover {
-  border-color: var(--cshell-accent);
+.empty-state {
+  margin: 0;
+  padding: 1.25rem 0;
+  text-align: center;
+  color: var(--cshell-text-muted);
+  font-size: var(--cshell-type-small);
 }
 
 .rail {
   display: grid;
-  gap: 0.85rem;
+  gap: 1rem;
   min-width: 0;
 }
 
@@ -526,6 +621,10 @@ onMounted(() => {
   overflow-wrap: anywhere;
 }
 
+.rail-card__value--big {
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+}
+
 .rail-card__caption {
   margin: 0;
   font-size: var(--cshell-type-caption);
@@ -536,6 +635,54 @@ onMounted(() => {
 .rail-card__links {
   display: grid;
   gap: 0.25rem;
+}
+
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.pending-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--cshell-border);
+  min-width: 0;
+}
+
+.pending-list__row:last-child {
+  border-bottom: 0;
+}
+
+.pending-list__label {
+  font-size: 0.86rem;
+  color: var(--cshell-text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pending-list__value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--cshell-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.pending-list__value:hover {
+  text-decoration: underline;
+}
+
+.pending-list__empty {
+  margin: 0.35rem 0 0;
+  font-size: 0.86rem;
+  color: var(--cshell-text-muted);
 }
 
 .rail-card__link {
@@ -566,6 +713,10 @@ onMounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 1.25rem;
   }
+
+  .page__welcome {
+    width: 100%;
+  }
 }
 
 @media (min-width: 1200px) {
@@ -580,8 +731,8 @@ onMounted(() => {
 }
 
 @media (max-width: 1023px) {
-  .quick__link,
-  .rail-card__link {
+  .rail-card__link,
+  .pending-list__value {
     min-height: 44px;
   }
 }

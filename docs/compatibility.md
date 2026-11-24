@@ -59,7 +59,18 @@ ENV NODE_OPTIONS=${CSHELL_BUILD_NODE_OPTIONS}
 
 **未降级处理**：没有跳过构建、没有用 `latest` 镜像替换 `baseline-source` 组、没有把 OOM 归因于偶发网络。若上游 Dockerfile 未来删除该 marker，`patchDockerfileForMemory()` 会直接报错要求人工复核，而不是悄悄沿用低内存。
 
-**本机限制**：宿主 7.2 GiB 内存、8 核，完整 baseline 源码构建在本机被宿主内存压力终止（非 Dockerfile 问题）。CI runner 内存更充裕，这也是把内存上限提高到 4 GiB 的前提；本机未拿到完整的 baseline 端到端成功记录，此处如实标注。
+**已验证**：在本机用真实上游 `deploy/Dockerfile` 打补丁后分阶段构建，frontend-builder 的
+`pnpm run build` 成功完成；`podman inspect` 确认镜像内为
+`NODE_OPTIONS=--max-old-space-size=4096`。对照实验证明旧的同名 `ARG NODE_OPTIONS` 写法
+无效（容器内仍是 1536）。
+
+**本机限制（如实记录）**：
+- 宿主 7.2 GiB 内存、8 核、根分区长期 94–97% 占用。用同一份打了补丁的 Dockerfile 分阶段构建：
+  frontend-builder 阶段（即 CI 里 OOM 的那一步，`RUN pnpm run build`）**完整构建成功**，
+  镜像内 `NODE_OPTIONS=--max-old-space-size=4096` 已核实；两次尝试分别用 3072 与 4096 均通过该阶段。
+- 后续 Go 阶段在本机因宿主磁盘耗尽失败（`no space left on device`，`/root/.cache/go-build`），
+  与内存修复无关，也不是 CI 的失败点。因此本机未取得 baseline 全流程成功记录；
+  该部分结论留给远端 CI 验证。不要在本地把这当成 baseline 通过证据。
 
 ## 隔离运行与命名
 

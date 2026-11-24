@@ -304,6 +304,11 @@ onMounted(() => {
         <h1>{{ t('pages.usage') }}</h1>
         <p class="page__subtitle">{{ t('usage.subtitle') }}</p>
       </div>
+      <div class="page__actions">
+        <Button variant="secondary" @click="applyRange">
+          {{ t('common.apply') }}
+        </Button>
+      </div>
     </header>
 
     <div class="toolbar">
@@ -315,9 +320,6 @@ onMounted(() => {
         <span class="field__label">{{ t('usage.endDate') }}</span>
         <Input v-model="draftEnd" type="date" />
       </label>
-      <Button variant="secondary" @click="applyRange">
-        {{ t('common.apply') }}
-      </Button>
       <p class="toolbar__meta">
         {{ t('usage.timezone') }}: {{ timezone }}
       </p>
@@ -502,6 +504,14 @@ onMounted(() => {
   min-width: 0;
 }
 
+.page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .page__head-text {
   display: grid;
   gap: 0.3rem;
@@ -509,7 +519,8 @@ onMounted(() => {
 
 .page h1 {
   margin: 0;
-  font-size: var(--cshell-type-page);
+  font-size: var(--cshell-type-page-lg);
+  line-height: var(--cshell-leading-page-lg);
   letter-spacing: -0.01em;
 }
 
@@ -599,8 +610,8 @@ onMounted(() => {
 .panel {
   display: grid;
   gap: 1rem;
-  padding: var(--cshell-panel-padding);
-  border-radius: var(--cshell-radius-panel);
+  padding: var(--cshell-panel-padding-lg);
+  border-radius: var(--cshell-radius-panel-lg);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
   min-width: 0;

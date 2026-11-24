@@ -388,9 +388,11 @@ onBeforeUnmount(() => {
         <h1>{{ t('pages.keys') }}</h1>
         <p class="page__subtitle">{{ t('keys.subtitle') }}</p>
       </div>
-      <Button @click="openCreate">
-        {{ t('keys.create') }}
-      </Button>
+      <div class="page__actions">
+        <Button @click="openCreate">
+          {{ t('keys.create') }}
+        </Button>
+      </div>
     </header>
 
     <section class="content-panel" :aria-label="t('pages.keys')">
@@ -671,7 +673,7 @@ onBeforeUnmount(() => {
 .page__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 0.75rem;
 }
@@ -681,9 +683,16 @@ onBeforeUnmount(() => {
   gap: 0.3rem;
 }
 
+.page__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .page h1 {
   margin: 0;
-  font-size: var(--cshell-type-page);
+  font-size: var(--cshell-type-page-lg);
+  line-height: var(--cshell-leading-page-lg);
   letter-spacing: -0.01em;
 }
 
@@ -696,9 +705,9 @@ onBeforeUnmount(() => {
 .content-panel {
   display: grid;
   gap: 1rem;
-  padding: var(--cshell-panel-padding);
+  padding: var(--cshell-panel-padding-lg);
   border: 1px solid var(--cshell-border);
-  border-radius: var(--cshell-radius-panel);
+  border-radius: var(--cshell-radius-panel-lg);
   background: var(--cshell-surface);
   min-width: 0;
 }

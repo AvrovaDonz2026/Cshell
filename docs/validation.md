@@ -252,3 +252,26 @@ SUB2API_UPSTREAM_ID=<commit-or-image-digest> \
 ```
 
 Execution status: **not executed locally against a real Sub2API.** No Cshell instance plus real upstream was reachable at `CSHELL_BASE_URL` in this workspace, and starting external containers was out of scope for this change. What was verified locally is `node --check`, plus the gate's own control flow exercised against a throwaway in-process stand-in serving the real `web/dist`: all 15 checks passed with zero runtime/console/request/HTTP errors, and separately confirmed the gate exits non-zero for a broken `/_cshell/` asset, an unexpected HTTP 500, an undeclared 401, a declared negative that never occurs, an injected `pageerror`, and an injected horizontal overflow. Those stand-in runs are script self-tests, not evidence about a real backend, and no artifacts from them are claimed as acceptance. The real-backend result remains pending a CI run in an environment with a live Sub2API.
+
+## Workspace-layout respace (dashboard + panel rhythm) — 2026-11-24
+
+Implemented per plan `工作空间页借鉴布局` on branch `cursor/independent-web-frontend` (uncommitted; not pushed). No business logic, endpoints, or data semantics changed; warm palette and existing tokens preserved.
+
+- `web/src/styles/theme.css`: added `--cshell-panel-padding-lg: 1.75rem`, `--cshell-radius-panel-lg: 20px`, `--cshell-type-page-lg: 2.25rem` (+ leading). All values derive from the existing warm scale; no new colors.
+- `web/src/views/DashboardView.vue`: title row is now one flex row — large H1 (`pages.dashboard`) left, `dashboard.welcome` + `dashboard.refresh` button right (subtitle stays visible beneath the H1). Main column keeps exactly the usage / heatmap-trend / totals panels, now on the lg padding + radius tokens. Removed the standalone quick-links section; `dashboard.linkUsage` / `linkPurchase` / `quickLinks` keys were deleted only after grepping confirmed no other consumer. The rail now holds: balance card (large value, `余额明细` → /profile, `充值` → /purchase only when `settings.paymentEnabled`), the existing subscription card (still gated on `subscriptionEnabled`), a pending card (pending PENDING orders via the existing `fetchMyOrders`, keys expiring within 7 days via the existing `fetchKeys`, both filtered client-side, rows link to /orders and /keys, `—` when a request fails, `暂无` when both are zero), and a help card linking only to /profile and the dashboard itself. Empty usage states show centered muted copy (`dashboard.emptyState`) — text only, no fabricated numbers.
+- `web/src/views/UsageView.vue` / `KeysView.vue` / `SubscriptionsView.vue`: title rows unified to "title left + existing action right" (Usage moved its Apply button into the header row; Keys wrapped its existing create button; Subscriptions had no action to add); main panels switched to the lg tokens. No API or behavior changes.
+- `web/tests/dashboard-view.spec.ts`: rewritten around URL-routed fetch stubs matching the real api modules' signatures — covers the one-row title/welcome/refresh, refresh refetching stats, the pending card's real counts (orders from `total`, keys client-filtered to a 7-day window), the pending empty copy, the `—` fallback when pending requests fail, and the balance card's recharge link gating on `paymentEnabled`. The original stats smoke assertions are kept verbatim.
+
+Verification (all executed locally):
+
+| Gate | Result |
+|---|---|
+| `pnpm --dir web lint:check` | pass (0 warnings, `--max-warnings 0`) |
+| `pnpm --dir web typecheck` | pass |
+| `pnpm --dir web test:run` | 18 files / **126 tests passed** (was 119; +7 new dashboard assertions, 0 regressions) |
+| `pnpm --dir web build` | pass (vite production build) |
+| `git diff --check` | clean |
+| Static preview | `CSHELL_WEB_STATIC=1 node scripts/cshell-web-preview.mjs stop && start && status` → healthy at `http://127.0.0.1:4284` (static build scope) |
+| Strict browser matrix | `WORKSPACE_CHROME=/opt/google/chrome/chrome node scripts/cshell-web-browser.mjs` → **169 checks passed, 0 failures, 0 runtime errors, 0 console errors, 0 request failures, 0 HTTP failures**. No existing assertions needed weakening; the dashboard layout change required no browser-matrix assertion updates (its dashboard gates are nav/overflow/theme based) |
+
+The stage-one uncommitted fixes in the tree (dialogContext scroll lock, `HeatmapGrid` compact prop, `keys.subtitle` / `ipCountLabel` i18n keys, AppShell, dialog-escape and heatmap-grid test additions) are preserved untouched and are covered by the green run above.

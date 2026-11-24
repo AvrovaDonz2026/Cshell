@@ -115,6 +115,14 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
   margin-inline: auto;
 }
 
+.page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .page__head-text {
   display: grid;
   gap: 0.3rem;
@@ -122,7 +130,8 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 
 .page h1 {
   margin: 0;
-  font-size: var(--cshell-type-page);
+  font-size: var(--cshell-type-page-lg);
+  line-height: var(--cshell-leading-page-lg);
   letter-spacing: -0.01em;
 }
 
@@ -135,9 +144,9 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 .content-panel {
   display: grid;
   gap: 1rem;
-  padding: var(--cshell-panel-padding);
+  padding: var(--cshell-panel-padding-lg);
   border: 1px solid var(--cshell-border);
-  border-radius: var(--cshell-radius-panel);
+  border-radius: var(--cshell-radius-panel-lg);
   background: var(--cshell-surface);
   min-width: 0;
 }
