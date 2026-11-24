@@ -8,7 +8,7 @@
 import { createServer } from 'node:http'
 import { connect } from 'node:net'
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, writeFile, unlink, open } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, unlink, open, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createCshellWebFixture } from './cshell-web-fixture.mjs'
@@ -40,6 +40,8 @@ for (const [name, port] of [
   }
 }
 
+const staticMode = process.env.CSHELL_WEB_STATIC === '1'
+const staticDir = path.join(webDir, 'dist-preview')
 const token = process.env.CSHELL_WEB_OWNER_TOKEN || `cshell-web-preview-${process.pid}`
 const stateRead = async () => JSON.parse(await readFile(statePath, 'utf8'))
 
@@ -87,9 +89,13 @@ if (action === 'stop') {
   try {
     const s = await stateRead()
     const r = await fetch(`${s.url}/__cshell_web/health`, { signal: AbortSignal.timeout(1000) })
-    if (r.ok) throw new Error(`Owned preview already running at ${s.url}`)
+    if (r.ok) {
+      const health = await r.json()
+      if (health.token !== s.token || !health.mock) throw new Error('Preview ownership mismatch')
+      throw new Error(`Owned preview already running at ${s.url}`)
+    }
   } catch (e) {
-    if (e.message.startsWith('Owned preview')) throw e
+    if (e.message.startsWith('Owned preview') || e.message === 'Preview ownership mismatch') throw e
   }
   const log = await open(path.join(dir, 'preview.log'), 'a')
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve'], {
@@ -133,6 +139,178 @@ if (action === 'stop') {
   })
 
   const viteBin = path.join(webDir, 'node_modules/vite/bin/vite.js')
+
+  if (staticMode) {
+    const build = spawn(
+      process.execPath,
+      [
+        viteBin,
+        'build',
+        '--config',
+        path.join(root, 'scripts/cshell-web-vite.config.mjs'),
+        '--outDir',
+        'dist-preview',
+        '--emptyOutDir',
+      ],
+      {
+        cwd: webDir,
+        stdio: 'inherit',
+        env: { ...process.env, VITE_BASE: '/' },
+      },
+    )
+    const built = await new Promise((resolve) => build.on('exit', (code) => resolve(code)))
+    if (built !== 0) {
+      fixture.closeAllConnections()
+      await new Promise(resolve => fixture.close(resolve))
+      throw new Error('Preview build failed')
+    }
+
+    const mime = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json',
+      '.jpeg': 'image/jpeg',
+      '.jpg': 'image/jpeg',
+      '.png': 'image/png',
+      '.svg': 'image/svg+xml',
+      '.woff2': 'font/woff2',
+      '.ico': 'image/x-icon',
+    }
+
+    let closing = false
+    let server
+    const close = async () => {
+      if (closing) return
+      closing = true
+      fixture.closeAllConnections()
+      fixture.close()
+      server?.close()
+      server?.closeAllConnections?.()
+      await unlink(statePath).catch(() => {})
+      process.exit(0)
+    }
+    process.on('SIGTERM', close)
+    process.on('SIGINT', close)
+
+    const serveFile = async (res, file, status = 200) => {
+      const body = await readFile(file)
+      res.writeHead(status, {
+        'content-type': mime[path.extname(file)] || 'application/octet-stream',
+        'cache-control': path.extname(file) === '.html' ? 'no-cache' : 'public, max-age=60',
+      })
+      res.end(body)
+    }
+    const inject = (html) =>
+      html.replace(
+        '</body>',
+        `<div id="cshell-web-mock-label" role="note" style="position:fixed;bottom:8px;right:8px;z-index:2147483647;padding:6px 10px;background:#713f12;color:#fff;font:12px/1.4 system-ui;max-width:calc(100vw - 16px);box-sizing:border-box;pointer-events:none">${BADGE}</div></body>`,
+      )
+
+    server = createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://127.0.0.1')
+      if (url.pathname === '/__cshell_web/health') {
+        res.setHeader('content-type', 'application/json')
+        const fixtureHealth = await fetch(`http://127.0.0.1:${fixturePort}/api/v1/__cshell_web/health`, { signal: AbortSignal.timeout(2000) }).catch(() => null)
+        const built = await stat(path.join(staticDir, 'index.html')).then(s => s.isFile()).catch(() => false)
+        res.statusCode = fixtureHealth?.ok && built ? 200 : 503
+        res.end(JSON.stringify({ mock: true, token, fixturePort, internalPort, static: true, healthy: res.statusCode === 200 }))
+        return
+      }
+      if (url.pathname === '/__cshell_web/stop') {
+        if (req.method !== 'POST' || req.headers['x-cshell-web-owner'] !== token) {
+          res.writeHead(403)
+          res.end()
+          return
+        }
+        res.end('Stopping')
+        setTimeout(close, 25)
+        return
+      }
+      if (url.pathname === '/__cshell_web/reset' && req.method === 'POST') {
+        const upstream = await fetch(`http://127.0.0.1:${fixturePort}/api/v1/__cshell_web/reset`, {
+          method: 'POST',
+        })
+        res.writeHead(upstream.status, { 'content-type': 'application/json' })
+        res.end(Buffer.from(await upstream.arrayBuffer()))
+        return
+      }
+      if (url.pathname === '/__cshell_web/report') {
+        const upstream = await fetch(`http://127.0.0.1:${fixturePort}/api/v1/__cshell_web/report`)
+        res.writeHead(upstream.status, { 'content-type': 'application/json' })
+        res.end(Buffer.from(await upstream.arrayBuffer()))
+        return
+      }
+      if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        res.end(
+          `<!doctype html><html><head><title>LOCAL MOCK admin</title></head><body data-cshell-web-admin-stub="1"><p>LOCAL MOCK · upstream admin gate (not the user workspace)</p><div id="cshell-web-mock-label" role="note">${BADGE}</div></body></html>`,
+        )
+        return
+      }
+
+      const isApi = /^\/(api|v1|setup)(\/|$)/.test(url.pathname)
+      if (isApi) {
+        const target = `http://127.0.0.1:${fixturePort}` + (req.url || '/')
+        try {
+          const chunks = []
+          for await (const c of req) chunks.push(c)
+          const body = Buffer.concat(chunks)
+          const headers = { ...req.headers }
+          delete headers.host
+          delete headers.connection
+          const upstream = await fetch(target, {
+            method: req.method,
+            headers,
+            body: body.length ? body : undefined,
+            redirect: 'manual',
+          })
+          const outHeaders = Object.fromEntries(upstream.headers)
+          res.writeHead(upstream.status, outHeaders)
+          res.end(Buffer.from(await upstream.arrayBuffer()))
+        } catch (e) {
+          console.error(e)
+          res.writeHead(502)
+          res.end('Preview proxy failed')
+        }
+        return
+      }
+
+      const cleaned = path
+        .normalize(decodeURIComponent(url.pathname))
+        .replace(/^(\.\.(\/|\\|$))+/, '')
+        .replace(/^[/\\]+/, '')
+      const candidate = path.join(staticDir, cleaned)
+      try {
+        const info = await stat(candidate)
+        if (info.isFile()) {
+          if (path.extname(candidate) === '.html') {
+            const html = await readFile(candidate, 'utf8')
+            res.writeHead(200, { 'content-type': mime['.html'], 'cache-control': 'no-cache' })
+            res.end(inject(html))
+            return
+          }
+          return serveFile(res, candidate, 200)
+        }
+      } catch {
+        /* fall through to SPA */
+      }
+      if (url.pathname.startsWith('/assets/') || /\.[a-z0-9]+$/i.test(url.pathname)) {
+        res.writeHead(404)
+        res.end('Static resource not found')
+        return
+      }
+      const index = path.join(staticDir, 'index.html')
+      const html = await readFile(index, 'utf8')
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' })
+      res.end(inject(html))
+    })
+
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(frontPort, '127.0.0.1', resolve)
+    })
+  } else {
   const vite = spawn(
     process.execPath,
     [
@@ -317,6 +495,7 @@ if (action === 'stop') {
     server.once('error', reject)
     server.listen(frontPort, '127.0.0.1', resolve)
   })
+  }
 
   await writeFile(
     statePath,
@@ -328,7 +507,8 @@ if (action === 'stop') {
         fixturePort,
         internalPort,
         token,
-        scope: 'independent web/',
+        scope: staticMode ? 'independent web/ static build' : 'independent web/ dev server',
+        static: staticMode,
       },
       null,
       2,

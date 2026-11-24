@@ -5,14 +5,24 @@ RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
+COPY scripts/release-*.mjs /build/scripts/
+COPY LICENSE THIRD_PARTY_NOTICES.md /build/
+COPY docs/licenses/ /build/docs/licenses/
 ENV NODE_OPTIONS=--max-old-space-size=4096
-RUN pnpm run build
+RUN pnpm run build \
+    && node /build/scripts/release-licenses.mjs npm \
+    && node /build/scripts/release-artifacts.mjs package \
+    && node /build/scripts/release-artifacts.mjs check
 
 FROM rust:1.93-bookworm AS rust-builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src/ ./src/
-RUN cargo build --release --locked --bin cshell
+COPY scripts/release-licenses.mjs ./scripts/
+COPY --from=web-builder /usr/local/bin/node /usr/local/bin/node
+RUN cargo fetch --locked \
+    && cargo build --release --locked --bin cshell \
+    && node scripts/release-licenses.mjs rust /build/rust-legal
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
@@ -22,7 +32,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=rust-builder /build/target/release/cshell /usr/local/bin/cshell
 COPY --from=web-builder /build/web/dist/ /app/web/dist/
-COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/cshell/
+COPY LICENSE THIRD_PARTY_NOTICES.md HISTORY-LICENSE.md /usr/share/doc/cshell/
+COPY --from=rust-builder /build/rust-legal/ /usr/share/doc/cshell/rust/
 COPY web/docs/web-third-party.md /usr/share/doc/cshell/web-third-party.md
 
 ENV CSHELL_LISTEN=0.0.0.0:8080 \

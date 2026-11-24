@@ -29,6 +29,14 @@ export interface PublicSettings {
   site_name?: string
   site_logo?: string
   registration_enabled?: boolean
+  email_verify_enabled?: boolean
+  turnstile_enabled?: boolean
+  tencent_captcha_enabled?: boolean
+  aliyun_captcha_enabled?: boolean
+  /** Explicit local preview marker only; never inferred from missing keys. */
+  captcha_provider?: 'turnstile' | 'mock'
+  turnstile_site_key?: string
+  registration_email_suffix_whitelist?: string[]
   payment_enabled?: boolean
   subscription_enabled?: boolean
   billing_currency?: string
@@ -72,13 +80,37 @@ export interface TrendPoint {
   actual_cost?: number
 }
 
+export interface ModelStat {
+  model: string
+  requests: number
+  total_tokens?: number
+  input_tokens?: number
+  output_tokens?: number
+  cost?: number
+  actual_cost?: number
+}
+
 export interface TrendResponse {
   trend: TrendPoint[]
-  models?: unknown[]
+  models?: ModelStat[]
   groups?: unknown[]
   start_date: string
   end_date: string
   granularity: 'day' | 'hour'
+}
+
+export interface UsageLog {
+  id: number
+  api_key_id?: number
+  model?: string
+  request_type?: string
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  total_cost?: number
+  actual_cost?: number
+  duration_ms?: number
+  created_at?: string
 }
 
 export interface ApiGroup {
@@ -161,17 +193,91 @@ export interface CheckoutInfo {
   global_min?: number
   global_max?: number
   balance_disabled?: boolean
+  balance_recharge_multiplier?: number
+  subscription_usd_to_cny_rate?: number
+  recharge_fee_rate?: number
+  recharge_bonus_tiers?: unknown[]
   help_text?: string
   help_image_url?: string
   stripe_publishable_key?: string
   [key: string]: unknown
 }
 
+export interface PaymentConfig {
+  payment_enabled?: boolean
+  min_amount?: number
+  max_amount?: number
+  enabled_payment_types?: string[]
+  daily_limit?: number
+  max_pending_orders?: number
+  order_timeout_minutes?: number
+  balance_disabled?: boolean
+  help_text?: string
+  help_image_url?: string
+  stripe_publishable_key?: string
+  [key: string]: unknown
+}
+
+/**
+ * Server-side limits. `methods` carries the same per-method figures as
+ * checkout-info; `global_min`/`global_max` are authoritative and must not
+ * be replaced with invented defaults in the UI.
+ */
+export interface PaymentLimits {
+  methods: Record<string, PaymentMethodInfo>
+  global_min: number
+  global_max: number
+  /** Legacy aliases some deployments still return. */
+  min_amount?: number
+  max_amount?: number
+  [key: string]: unknown
+}
+
+export type PaymentResultType =
+  | 'order_created'
+  | 'oauth_required'
+  | 'jsapi_ready'
+  | (string & {})
+
+export interface CreateOrderResult {
+  order_id: number
+  out_trade_no?: string
+  resume_token?: string
+  expires_at: string
+  status: string
+  amount: number
+  payment_type: string
+  order_type?: string
+  result_type?: PaymentResultType
+  pay_url?: string
+  /** May be a raw payment string/URL or a data: image URL. */
+  qr_code?: string
+  pay_amount?: number
+  currency?: string
+  [key: string]: unknown
+}
+
+export interface PublicOrderStatus {
+  out_trade_no: string
+  status: string
+  paid?: boolean
+  expires_at?: string
+  created_at?: string
+  amount?: number
+  pay_amount?: number
+  currency?: string
+  [key: string]: unknown
+}
+
+export interface PublicOrderVerify extends PublicOrderStatus { paid: boolean }
+export interface PublicOrderResolve extends PublicOrderStatus { id: number; paid?: never }
+
 export interface PaymentOrder {
   id: number
   user_id?: number
   amount: number
   pay_amount?: number
+  currency?: string
   fee_rate?: number
   payment_type?: string
   out_trade_no?: string

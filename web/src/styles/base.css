@@ -29,6 +29,7 @@ select {
 }
 
 .cshell-user-workspace,
+.cshell-public,
 body.cshell-user-portals {
   background: var(--cshell-bg);
   color: var(--cshell-text);
@@ -36,6 +37,7 @@ body.cshell-user-portals {
 }
 
 .cshell-user-workspace :focus-visible,
+.cshell-public :focus-visible,
 body.cshell-user-portals :focus-visible {
   outline: 2px solid var(--cshell-focus);
   outline-offset: 2px;

@@ -1,32 +1,121 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AuthSplit from '@/components/AuthSplit.vue'
 import Button from '@/components/primitives/Button.vue'
+import CaptchaField from '@/components/primitives/CaptchaField.vue'
 import Input from '@/components/primitives/Input.vue'
 import { redirectAdminToUpstream } from '@/lib/adminRedirect'
 import { useAuthStore } from '@/stores/auth'
-import { useThemeStore } from '@/stores/theme'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
 const auth = useAuthStore()
-const theme = useThemeStore()
+const settings = useSettingsStore()
 const router = useRouter()
 
 const email = ref('')
 const password = ref('')
-const username = ref('')
+const confirmPassword = ref('')
+const verifyCode = ref('')
+const captchaToken = ref('')
+const captchaError = ref('')
+const invitationCode = ref('')
 const error = ref('')
 const pending = ref(false)
+const sendingCode = ref(false)
+const codeSent = ref(false)
+const captchaReset = ref(0)
+const countdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval> | undefined
+onBeforeUnmount(() => clearInterval(countdownTimer))
+watch(email, () => { codeSent.value = false; verifyCode.value = '' })
+const registrationCaptchaSatisfied = computed(() =>
+  settings.emailVerifyRequired ? !!verifyCode.value : captchaSatisfied.value,
+)
+
+onMounted(() => {
+  if (!settings.settingsReady && !settings.loading) void settings.loadPublic()
+})
+
+const captchaSatisfied = computed(() => !settings.captchaRequired || !!captchaToken.value)
+
+const canSubmit = computed(
+  () =>
+    settings.settingsReady &&
+    settings.registrationEnabled &&
+    registrationCaptchaSatisfied.value &&
+    (!settings.emailVerifyRequired || !!verifyCode.value) &&
+    !!email.value &&
+    !!password.value &&
+    password.value === confirmPassword.value &&
+    !pending.value,
+)
+
+async function reloadSettings(): Promise<void> {
+  error.value = ''
+  await settings.reload()
+}
+
+function onCaptchaToken(token: string): void {
+  captchaToken.value = token
+  if (token) captchaError.value = ''
+}
+
+async function sendCode(): Promise<void> {
+  error.value = ''
+  if (!email.value) {
+    error.value = t('auth.emailRequired')
+    return
+  }
+  if (sendingCode.value || countdown.value > 0 || !settings.settingsReady || !settings.registrationEnabled || !captchaSatisfied.value) return
+  sendingCode.value = true
+  try {
+    const result = await auth.sendVerifyCode(email.value, captchaToken.value || undefined)
+    countdown.value = Number.isFinite(result.countdown) ? Math.max(0, Math.ceil(result.countdown)) : 60
+    clearInterval(countdownTimer)
+    countdownTimer = setInterval(() => { countdown.value = Math.max(0, countdown.value - 1); if (!countdown.value) clearInterval(countdownTimer) }, 1000)
+    codeSent.value = true
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : t('auth.sendCodeFailed')
+  } finally {
+    sendingCode.value = false
+    captchaToken.value = ''
+    captchaReset.value += 1
+  }
+}
 
 async function onSubmit(): Promise<void> {
   error.value = ''
+  if (!settings.settingsReady) {
+    error.value = t('auth.settingsUnavailable')
+    return
+  }
+  if (!settings.registrationEnabled) {
+    error.value = t('auth.registrationDisabled')
+    return
+  }
+  if (password.value !== confirmPassword.value) {
+    error.value = t('auth.passwordMismatch')
+    return
+  }
+  if (settings.captchaRequired && !settings.emailVerifyRequired && !captchaToken.value) {
+    captchaError.value = t('auth.captchaToken')
+    return
+  }
+  if (settings.emailVerifyRequired && !verifyCode.value) {
+    error.value = t('auth.verifyCode')
+    return
+  }
   pending.value = true
   try {
     await auth.register({
       email: email.value,
       password: password.value,
-      username: username.value || undefined,
+      verify_code: settings.emailVerifyRequired ? verifyCode.value : undefined,
+      turnstile_token: !settings.emailVerifyRequired && settings.captchaRequired ? captchaToken.value : undefined,
+      invitation_code: invitationCode.value || undefined,
     })
     if (auth.isAdmin) {
       redirectAdminToUpstream()
@@ -37,69 +126,193 @@ async function onSubmit(): Promise<void> {
     error.value = err instanceof Error ? err.message : 'Registration failed'
   } finally {
     pending.value = false
+    captchaToken.value = ''
+    captchaReset.value += 1
   }
 }
 </script>
 
 <template>
-  <div class="cshell-user-workspace auth-page" :data-theme="theme.mode">
-    <form class="auth-card" @submit.prevent="onSubmit">
-      <h1>{{ t('auth.registerTitle') }}</h1>
-      <label>
-        <span>{{ t('auth.username') }}</span>
-        <Input v-model="username" autocomplete="nickname" />
-      </label>
-      <label>
-        <span>{{ t('auth.email') }}</span>
-        <Input v-model="email" type="email" autocomplete="username" required />
-      </label>
-      <label>
-        <span>{{ t('auth.password') }}</span>
-        <Input v-model="password" type="password" autocomplete="new-password" required />
-      </label>
-      <p v-if="error" class="error" role="alert">
-        {{ error }}
+  <AuthSplit :title="t('auth.registerTitle')">
+    <div class="auth-card">
+      <h2 class="auth-card__title">{{ t('auth.registerTitle') }}</h2>
+      <p class="auth-card__caption">{{ t('auth.registerCaption') }}</p>
+
+      <template v-if="settings.settingsFailed">
+        <p class="disabled-msg" role="alert">
+          {{ t('auth.settingsUnavailable') }}
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          block
+          :disabled="settings.loading"
+          @click="reloadSettings"
+        >
+          {{ t('auth.retry') }}
+        </Button>
+      </template>
+
+      <p
+        v-else-if="!settings.settingsReady"
+        class="disabled-msg"
+        role="status"
+      >
+        {{ t('auth.settingsLoading') }}
       </p>
-      <Button type="submit" block :disabled="pending">
-        {{ pending ? t('auth.registering') : t('auth.submitRegister') }}
-      </Button>
+
+      <p
+        v-else-if="!settings.registrationEnabled"
+        class="disabled-msg"
+        role="status"
+      >
+        {{ t('auth.registrationDisabled') }}
+      </p>
+
+      <form
+        v-else
+        class="auth-form"
+        @submit.prevent="onSubmit"
+      >
+        <label>
+          <span>{{ t('auth.email') }}</span>
+          <Input v-model="email" type="email" autocomplete="username" required />
+        </label>
+        <label>
+          <span>{{ t('auth.password') }}</span>
+          <Input
+            v-model="password"
+            type="password"
+            autocomplete="new-password"
+            required
+          />
+        </label>
+        <label>
+          <span>{{ t('auth.confirmPassword') }}</span>
+          <Input
+            v-model="confirmPassword"
+            type="password"
+            autocomplete="new-password"
+            required
+          />
+        </label>
+
+        <template v-if="settings.emailVerifyRequired">
+          <label>
+            <span>{{ t('auth.verifyCode') }}</span>
+            <div class="row">
+              <Input
+                v-model="verifyCode"
+                autocomplete="one-time-code"
+                required
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                :disabled="sendingCode || countdown > 0 || !email || !captchaSatisfied"
+                @click="sendCode"
+              >
+                {{
+                  countdown > 0
+                    ? `${countdown}s`
+                    : sendingCode
+                      ? t('auth.sendingCode')
+                      : codeSent
+                        ? t('auth.resendCode')
+                        : t('auth.sendCode')
+                }}
+              </Button>
+            </div>
+          </label>
+        </template>
+
+        <div
+          v-if="settings.captchaRequired && settings.captchaProvider"
+          class="captcha-block"
+        >
+          <span v-if="settings.captchaProvider !== 'unavailable'">
+            {{ t('auth.captchaToken') }}
+          </span>
+          <CaptchaField
+            :reset-key="captchaReset"
+            :provider="settings.captchaProvider"
+            :site-key="settings.settings?.turnstile_site_key || ''"
+            :error="captchaError"
+            @update:token="onCaptchaToken"
+          />
+        </div>
+
+        <label>
+          <span>{{ t('auth.invitationCode') }}</span>
+          <Input v-model="invitationCode" autocomplete="off" />
+        </label>
+
+        <p v-if="error" class="error" role="alert">
+          {{ error }}
+        </p>
+        <Button type="submit" block :disabled="!canSubmit">
+          {{ pending ? t('auth.registering') : t('auth.submitRegister') }}
+        </Button>
+      </form>
+
       <RouterLink class="auth-link" :to="{ name: 'login' }">
         {{ t('auth.toLogin') }}
       </RouterLink>
-    </form>
-  </div>
+      <RouterLink class="auth-link" :to="{ name: 'email-verify' }">
+        {{ t('auth.toEmailVerify') }}
+      </RouterLink>
+    </div>
+  </AuthSplit>
 </template>
 
 <style scoped>
-.auth-page {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: var(--cshell-bg);
-  color: var(--cshell-text);
-}
-
 .auth-card {
-  width: min(100%, 24rem);
   display: grid;
   gap: 0.85rem;
-  padding: 1.5rem;
-  border-radius: var(--cshell-radius-window);
-  background: var(--cshell-surface);
-  border: 1px solid var(--cshell-border);
-  box-shadow: var(--cshell-shadow);
 }
 
-.auth-card h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.4rem;
+.auth-card__title {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+
+.auth-card__caption {
+  margin: -0.45rem 0 0.1rem;
+  font-size: 0.85rem;
+  color: var(--cshell-text-muted);
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.85rem;
 }
 
 .auth-card label {
   display: grid;
   gap: 0.35rem;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.captcha-block {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.row :deep(.cshell-input) {
+  flex: 1;
+}
+
+.disabled-msg {
+  margin: 0;
+  color: var(--cshell-text-muted);
 }
 
 .error {
@@ -111,5 +324,9 @@ async function onSubmit(): Promise<void> {
   text-align: center;
   color: var(--cshell-accent);
   text-decoration: none;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

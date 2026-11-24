@@ -11,8 +11,18 @@ const theme = useThemeStore()
 const route = useRoute()
 
 function syncPortalClass(): void {
-  const isGuest = route.name === 'login' || route.name === 'register'
-  document.body.classList.toggle('cshell-user-portals', !isGuest && auth.isAuthenticated)
+  const publicOrGuest =
+    route.name === 'home' ||
+    route.name === 'login' ||
+    route.name === 'register' ||
+    route.name === 'email-verify' ||
+    route.name === 'payment-result' ||
+    route.meta.public === true ||
+    route.meta.guest === true
+  document.body.classList.toggle(
+    'cshell-user-portals',
+    !publicOrGuest && auth.isAuthenticated,
+  )
   document.body.dataset.theme = theme.mode
 }
 

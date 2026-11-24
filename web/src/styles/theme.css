@@ -2,6 +2,7 @@
    Scoped to authenticated user workspace and portal body class only. */
 
 .cshell-user-workspace,
+.cshell-public,
 body.cshell-user-portals {
   --cshell-radius-window: 20px;
   --cshell-radius-panel: 16px;
@@ -26,10 +27,20 @@ body.cshell-user-portals {
   --cshell-shadow: 0 12px 32px rgba(44, 36, 28, 0.08);
   --cshell-sidebar: #efe6d8;
   --cshell-overlay: rgba(44, 36, 28, 0.42);
+
+  --cshell-heat-0: #f1ede5;
+  --cshell-heat-1: #d9c6a8;
+  --cshell-heat-2: #bd9a6d;
+  --cshell-heat-3: #946a43;
+  --cshell-heat-3-ink: #fffaf2;
+  --cshell-heat-4: #5c3826;
+  --cshell-heat-4-ink: #fffaf2;
 }
 
 .cshell-user-workspace[data-theme='dark'],
 html[data-theme='dark'] .cshell-user-workspace,
+.cshell-public[data-theme='dark'],
+html[data-theme='dark'] .cshell-public,
 body.cshell-user-portals[data-theme='dark'],
 html[data-theme='dark'] body.cshell-user-portals {
   --cshell-bg: #1c1814;
@@ -47,4 +58,12 @@ html[data-theme='dark'] body.cshell-user-portals {
   --cshell-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
   --cshell-sidebar: #221c17;
   --cshell-overlay: rgba(0, 0, 0, 0.55);
+
+  --cshell-heat-0: #29251f;
+  --cshell-heat-1: #6b5139;
+  --cshell-heat-2: #896642;
+  --cshell-heat-3: #b18a60;
+  --cshell-heat-3-ink: #29251f;
+  --cshell-heat-4: #d0ad7d;
+  --cshell-heat-4-ink: #29251f;
 }

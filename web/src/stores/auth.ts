@@ -4,6 +4,15 @@ import { apiRequest, configureApiClient, refreshTokens } from '@/api/client'
 import type { AuthPayload, User } from '@/api/types'
 import { clearSessionStorage, readSession, writeSession } from '@/lib/storage'
 
+export interface RegisterInput {
+  email: string
+  password: string
+  verify_code?: string
+  turnstile_token?: string
+  invitation_code?: string
+  promo_code?: string
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(null)
   const refreshToken = ref<string | null>(null)
@@ -44,21 +53,17 @@ export const useAuthStore = defineStore('auth', () => {
     hydrated.value = true
   }
 
-  async function login(email: string, password: string): Promise<void> {
+  async function login(email: string, password: string, turnstileToken?: string): Promise<void> {
     const payload = await apiRequest<AuthPayload>('/auth/login', {
       method: 'POST',
-      body: { email, password },
+      body: { email, password, turnstile_token: turnstileToken },
       auth: false,
       skipRefresh: true,
     })
     applyPayload(payload)
   }
 
-  async function register(input: {
-    email: string
-    password: string
-    username?: string
-  }): Promise<void> {
+  async function register(input: RegisterInput): Promise<void> {
     const payload = await apiRequest<AuthPayload>('/auth/register', {
       method: 'POST',
       body: input,
@@ -66,6 +71,15 @@ export const useAuthStore = defineStore('auth', () => {
       skipRefresh: true,
     })
     applyPayload(payload)
+  }
+
+  async function sendVerifyCode(email: string, turnstileToken?: string): Promise<{ message: string; countdown: number }> {
+    return apiRequest('/auth/send-verify-code', {
+      method: 'POST',
+      body: { email, turnstile_token: turnstileToken },
+      auth: false,
+      skipRefresh: true,
+    })
   }
 
   async function logout(): Promise<void> {
@@ -118,6 +132,7 @@ export const useAuthStore = defineStore('auth', () => {
     hydrate,
     login,
     register,
+    sendVerifyCode,
     logout,
     refresh,
     clearLocal,

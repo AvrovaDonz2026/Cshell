@@ -168,6 +168,12 @@ watch(open, async (isOpen) => {
   color: var(--cshell-text, #2c241c);
   cursor: pointer;
 }
+
+@media (max-width: 1023px) {
+  .cshell-select__trigger {
+    min-height: 44px;
+  }
+}
 </style>
 
 <style>

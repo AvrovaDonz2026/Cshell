@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchProfile, updatePassword, updateProfile } from '@/api/user'
 import type { User } from '@/api/types'
@@ -79,6 +79,19 @@ async function onChangePassword(): Promise<void> {
   }
 }
 
+const facts = computed(() => {
+  const current = profile.value
+  if (!current) return []
+  return [
+    { label: t('profile.email'), value: current.email },
+    { label: t('profile.role'), value: current.role },
+    { label: t('profile.status'), value: current.status || '—' },
+    { label: t('profile.balance'), value: current.balance ?? '—' },
+    { label: t('profile.concurrency'), value: current.concurrency ?? '—' },
+    { label: t('profile.createdAt'), value: current.created_at || '—' },
+  ]
+})
+
 onMounted(() => {
   void load()
 })
@@ -86,9 +99,14 @@ onMounted(() => {
 
 <template>
   <div class="page">
-    <h1>{{ t('pages.profile') }}</h1>
+    <header class="page__head">
+      <div class="page__head-text">
+        <h1>{{ t('pages.profile') }}</h1>
+        <p class="page__subtitle">{{ t('profile.subtitle') }}</p>
+      </div>
+    </header>
 
-    <p v-if="loading" role="status">
+    <p v-if="loading" role="status" class="state">
       {{ t('common.loading') }}
     </p>
     <p v-else-if="error" class="error" role="alert">
@@ -98,129 +116,192 @@ onMounted(() => {
       {{ message }}
     </p>
 
-    <template v-if="profile">
-      <section class="panel">
+    <div v-if="profile" class="layout">
+      <div class="forms">
+        <form class="panel" @submit.prevent="onSaveUsername">
+          <div class="panel__head">
+            <h2 class="panel__title">{{ t('profile.updateUsername') }}</h2>
+            <p class="panel__caption">{{ t('profile.updateUsernameCaption') }}</p>
+          </div>
+          <label class="field">
+            <span class="field__label">{{ t('profile.username') }}</span>
+            <Input v-model="username" autocomplete="username" required />
+          </label>
+          <div class="panel__actions">
+            <Button type="submit" :disabled="saving">
+              {{ t('common.save') }}
+            </Button>
+          </div>
+        </form>
+
+        <form class="panel" @submit.prevent="onChangePassword">
+          <div class="panel__head">
+            <h2 class="panel__title">{{ t('profile.changePassword') }}</h2>
+            <p class="panel__caption">{{ t('profile.changePasswordCaption') }}</p>
+          </div>
+          <label class="field">
+            <span class="field__label">{{ t('profile.oldPassword') }}</span>
+            <Input
+              v-model="oldPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+          <label class="field">
+            <span class="field__label">{{ t('profile.newPassword') }}</span>
+            <Input
+              v-model="newPassword"
+              type="password"
+              autocomplete="new-password"
+              required
+            />
+          </label>
+          <div class="panel__actions">
+            <Button type="submit" :disabled="changingPassword">
+              {{ t('common.save') }}
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      <aside class="rail" :aria-labelledby="'profile-facts-title'">
+        <h2 id="profile-facts-title" class="panel__title">
+          {{ t('profile.detailsTitle') }}
+        </h2>
         <dl class="facts">
-          <div>
-            <dt>{{ t('profile.email') }}</dt>
-            <dd>{{ profile.email }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('profile.role') }}</dt>
-            <dd>{{ profile.role }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('profile.status') }}</dt>
-            <dd>{{ profile.status || '—' }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('profile.balance') }}</dt>
-            <dd>{{ profile.balance ?? '—' }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('profile.concurrency') }}</dt>
-            <dd>{{ profile.concurrency ?? '—' }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('profile.createdAt') }}</dt>
-            <dd>{{ profile.created_at || '—' }}</dd>
+          <div v-for="fact in facts" :key="fact.label" class="fact">
+            <dt class="fact__label">{{ fact.label }}</dt>
+            <dd class="fact__value">{{ fact.value }}</dd>
           </div>
         </dl>
-      </section>
-
-      <form class="panel form" @submit.prevent="onSaveUsername">
-        <h2>{{ t('profile.updateUsername') }}</h2>
-        <label>
-          <span>{{ t('profile.username') }}</span>
-          <Input v-model="username" autocomplete="username" required />
-        </label>
-        <Button type="submit" :disabled="saving">
-          {{ t('common.save') }}
-        </Button>
-      </form>
-
-      <form class="panel form" @submit.prevent="onChangePassword">
-        <h2>{{ t('profile.changePassword') }}</h2>
-        <label>
-          <span>{{ t('profile.oldPassword') }}</span>
-          <Input
-            v-model="oldPassword"
-            type="password"
-            autocomplete="current-password"
-            required
-          />
-        </label>
-        <label>
-          <span>{{ t('profile.newPassword') }}</span>
-          <Input
-            v-model="newPassword"
-            type="password"
-            autocomplete="new-password"
-            required
-          />
-        </label>
-        <Button type="submit" :disabled="changingPassword">
-          {{ t('common.save') }}
-        </Button>
-      </form>
-    </template>
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .page {
   display: grid;
-  gap: 1rem;
+  gap: 1.4rem;
   min-width: 0;
-  max-width: 36rem;
+}
+
+.page__head-text {
+  display: grid;
+  gap: 0.3rem;
 }
 
 .page h1 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.7rem;
+  letter-spacing: -0.01em;
+}
+
+.page__subtitle {
+  margin: 0;
+  font-size: 0.94rem;
+  color: var(--cshell-text-muted);
+}
+
+.layout {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.forms {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .panel {
-  padding: 1rem;
-  border-radius: var(--cshell-radius-panel);
-  background: var(--cshell-surface);
-  border: 1px solid var(--cshell-border);
-}
-
-.panel h2 {
-  margin: 0 0 0.65rem;
-  font-size: 1.05rem;
-}
-
-.facts {
   display: grid;
-  gap: 0.65rem;
-  margin: 0;
+  gap: 0.85rem;
+  padding: 1.25rem;
+  border-radius: var(--cshell-radius-panel);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-surface);
+  min-width: 0;
 }
 
-.facts div {
+.panel__head {
   display: grid;
   gap: 0.15rem;
 }
 
-.facts dt {
-  color: var(--cshell-text-muted);
-  font-size: 0.85rem;
+.panel__title {
+  margin: 0;
+  font-size: 1.02rem;
 }
 
-.facts dd {
+.panel__caption {
   margin: 0;
+  font-size: 0.82rem;
+  color: var(--cshell-text-muted);
+}
+
+.panel__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.field__label {
+  font-size: 0.8rem;
+  color: var(--cshell-text-muted);
+}
+
+.rail {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.25rem;
+  border-radius: var(--cshell-radius-panel);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-bg-elevated);
+  align-content: start;
+  min-width: 0;
+}
+
+.facts {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  gap: 0.1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--cshell-border);
+}
+
+.fact:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.fact__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--cshell-text-muted);
+}
+
+.fact__value {
+  margin: 0;
+  font-size: 0.9rem;
   overflow-wrap: anywhere;
 }
 
-.form {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.form label {
-  display: grid;
-  gap: 0.3rem;
+.state {
+  margin: 0;
+  color: var(--cshell-text-muted);
 }
 
 .error {
@@ -231,5 +312,17 @@ onMounted(() => {
 .ok {
   margin: 0;
   color: var(--cshell-accent);
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    align-items: start;
+  }
+
+  .rail {
+    position: sticky;
+    top: 5rem;
+  }
 }
 </style>

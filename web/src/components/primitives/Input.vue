@@ -41,4 +41,10 @@ const model = defineModel<string>({ default: '' })
   background: var(--cshell-surface, #fff9f0);
   color: var(--cshell-text, #2c241c);
 }
+
+@media (max-width: 1023px) {
+  .cshell-input {
+    min-height: 44px;
+  }
+}
 </style>

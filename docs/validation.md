@@ -60,7 +60,7 @@ The original SPA under `web/` has its own loopback preview and strict Playwright
 
 Scripts (distinct names under `scripts/`):
 
-- `scripts/cshell-web-fixture.mjs` — deterministic LOCAL MOCK for auth, settings/public, dashboard stats/trend, usage, keys CRUD, groups/available, subscriptions summary, payment checkout/plans/orders/my; `POST /payment/orders` returns **409**
+- `scripts/cshell-web-fixture.mjs` — deterministic LOCAL MOCK for auth (register with captcha `LOCAL-OK` and code `123456`, send-code with captcha; registration consumes verification code), settings/public with live toggles (`POST /api/v1/__cshell_web/settings`), dashboard stats/trend, usage logs, keys CRUD, groups/available, subscriptions summary, payment checkout/plans/config/limits, order creation with `pay_url` + `resume_token`, public verify/resolve, and orders/my. Amount `0.01` intentionally returns 409 as the failure demo.
 - `scripts/cshell-web-preview.mjs` — `start` \| `stop` \| `status` \| `serve`; state in `artifacts/cshell-web/preview-state.json`; injects visible badge `LOCAL MOCK DATA · independent web · no real payments`
 - `scripts/cshell-web-vite.config.mjs` — loads `web/vite.config.ts`, `base: '/'`, proxies `/api` to the fixture
 - `scripts/cshell-web-browser.mjs` — strict acceptance against `WORKSPACE_URL` default `http://127.0.0.1:4284`
@@ -70,6 +70,7 @@ cd /home/donz/Cshell
 pnpm --dir web install --frozen-lockfile
 # optional browser binary for acceptance:
 # pnpm --dir web exec playwright install chromium
+# start | stop | status (add CSHELL_WEB_STATIC=1 to serve the production build)
 node scripts/cshell-web-preview.mjs start
 node scripts/cshell-web-preview.mjs status
 WORKSPACE_CHROME=/opt/google/chrome/chrome WORKSPACE_URL=http://127.0.0.1:4284 \
@@ -84,4 +85,69 @@ Acceptance matrix: desktop 1440×1000, tablet 820×1180, phone 390×844; themes 
 
 **Not claimed:** real payment checkout, OAuth/passkeys, real upstream authentication, or production data.
 
-Final independent web acceptance (2026-11-21): **PASSED** — 123 checks, 0 failures, 0 runtime/console/request/HTTP errors, 53 screenshots, source digests matched. Preview left healthy at `http://127.0.0.1:4284/dashboard`. Unit gate: `pnpm --dir web test:run`, `typecheck`, and `lint:check` all passed (14 tests).
+Core closure acceptance (2026-11-21): **PASSED** — 129 checks, 0 failures, 0 unexpected runtime/console/request/HTTP errors, 55 screenshots, source digests matched. Two intentionally negative registration requests (HTTP 400 for a wrong verification code) are recorded under `expectedErrors`, not counted as defects. Preview is served from a static production build (`CSHELL_WEB_STATIC=1`) to avoid Vite dev-server module reload noise; URL remains `http://127.0.0.1:4284/dashboard`. Unit gate: `pnpm --dir web test:run` (25 tests), `typecheck`, and `lint:check` all passed.
+
+Earlier matrix run (before the closure suite) recorded 123 checks and 53 screenshots; the number now reflects added registration, payment-result, usage-log, and key-edit coverage.
+
+Core closure suite (register, payment, usage statistics, API keys):
+- Registration respects `registration_enabled`; `/register` redirects to login when closed. Captcha and email verification fields render and submit only when the public settings require them; `/email-verify` accepts the mock code and starts a session. Wrong codes surface an API error.
+- Payment supports subscription and balance recharge, selects methods from `checkout-info`, posts `payment_source: 'web'` with `return_url`, then follows `pay_url` or shows a QR payload. `/payment/result` verifies via public `out_trade_no` / `resume_token` and polls for a terminal state. Local mock marks orders paid; real provider settlement is not validated here.
+- Usage adds dashboard actual-cost/duration cards, trend model summary, and paginated `GET /usage` logs; heatmap zero/missing/outside semantics and single-row month labels are unchanged.
+- API keys support create with quota/IP/expiry, one-time secret copy, pagination and status filter, edit via `PUT /keys/{id}`, and delete confirmation.
+
+
+## Warm independent UI strict acceptance — 2026-11-24
+
+Historical pre-contract-correction acceptance **PASSED** at `2026-11-24T03:49:28.617Z`; the 142-check/105-test counts below are superseded by the pinned-contract correction gate appended below:
+
+- Full static-preview browser matrix: **142/142 checks**, **67 screenshots**; zero runtime errors, unexpected console errors, failed requests, HTTP failures, or unknown fixture endpoints. Source SHA-256 matched at start/end: `42b3da5a0d31c01706e6791232c9588d7049ecf399b25817e9060a9a3b2a0910`.
+- Responsive checks cover 1440×1000 desktop, 820×1180 tablet, 390×844 phone; light/dark and OS-resolved system rows. Guest home has six independent light/dark screenshots, computed palette and no-overflow checks, loaded brand resource, registration link, and direct reload. Authenticated routes, nested key dialog Escape behavior and mobile navigation remain covered.
+- Core checks exercise explicit local-mock captcha button (not a free-text token input), wrong-code registration, closed-registration redirect with finally restoration, key invalid quota/IP blocking without PUT then valid persisted edits, applied usage ranges (draft changes make no requests), populated heatmaps/models/logs, checkout and recharge, QR raw/data-image rendering, cancellation, expired/cancelled results, and unknown-order 404 without a false Paid state.
+- Negative errors are scoped per page/request to exact method, path, status and count (one POST register 400, one POST public verify 404). Each requires one exact browser resource-console message at the matching endpoint; expectation state is removed in finally. Unrelated console/HTTP/request errors always fail. No blanket navigation-abort exemption remains. A detected teardown-aborted recharge navigation was fixed by waiting for the result and settled network before closing its context.
+- Actual Rust proxy production browser runner: **4/4 checks**, **3 screenshots**, zero errors. Uses ordinary `web/dist` built with `/_cshell/` assets, starts a real Rust binary and isolated loopback mock upstream on ephemeral ports, checks `/`, `/login`, `/dashboard` direct navigation and reload, login-to-dashboard root history, forwarded login/settings/dashboard APIs, loaded `/_cshell/2shell.jpeg`, prefixed JS/CSS, and a missing-asset 404. Router history now explicitly uses `/`; asset URLs continue using Vite BASE_URL. Its browser, proxy and fixture are stopped in finally.
+- Fixture regression gate: **4/4 Node tests** (unknown identifiers, rejected unsupported scenario values, unpaid pending/expired/cancelled verify+resolve, persistent cancellation). Fixture instances no longer share settings/orders. Unsupported mock states cannot fall through to successful payment.
+- Frontend: **17 files / 105 tests passed**, typecheck, zero-warning ESLint and normal production build passed. Unit fixtures emit non-fatal missing-translation warnings for `keys.subtitle` and `keys.ipCountLabel`; these are test-local locale stubs, not browser console errors.
+- Rust: **10 tests passed** (3 unit + 4 proxy + 3 contract), no failures; binary build passed. No real upstream, database, credentials, provider settlement, OAuth/passkey or deployed integration was verified in this run.
+
+Reproduction:
+
+```sh
+CSHELL_WEB_STATIC=1 node scripts/cshell-web-preview.mjs start
+node scripts/cshell-web-preview.mjs status
+WORKSPACE_CHROME=/usr/bin/google-chrome node scripts/cshell-web-browser.mjs
+node --test scripts/cshell-web-fixture.test.mjs
+pnpm --dir web build
+/home/donz/.cargo/bin/cargo build --bin cshell
+WORKSPACE_CHROME=/usr/bin/google-chrome node scripts/cshell-production-browser.mjs
+/home/donz/.cargo/bin/cargo test
+```
+
+Preview lifecycle: the owned static preview is deliberately left healthy at `http://127.0.0.1:4284/` (fixture `127.0.0.1:41949`, no Vite listener required). `preview-state.json` records static mode, owner PID/token and scope. Stop only through `node scripts/cshell-web-preview.mjs stop`, then restart with `CSHELL_WEB_STATIC=1` after source changes; the static build does not hot reload. Health checks validate fixture responsiveness and built index presence. The stop endpoint validates its owner token; historical ports are untouched. Missing static resources return 404 instead of HTML, including on preview. Production runner ephemeral services have been cleaned up.
+
+Evidence: `artifacts/cshell-web/acceptance/results.json` and `artifacts/cshell-web/production/results.json`. Representative acceptance screenshots: `guest-home-desktop-light.png`, `guest-home-desktop-dark.png`, `guest-home-phone-light.png`, `guest-home-phone-dark.png`, `usage-applied-filters.png`, `payment-qr.png`, `payment-qr_code.png`, `payment-expired.png`, `payment-cancelled.png`, `payment-unknown.png`. Production screenshots: `production/home.png`, `production/login.png`, `production/dashboard.png` beneath `artifacts/cshell-web/`.
+
+No plan, provenance, release-notice edits, commit, push, or historical frontend source copying were performed by this acceptance task. Remaining blocker for an upstream claim: a separately executed real pinned-upstream/provider integration is still required; local mock results do not replace it.
+
+
+## Pinned-backend contract correction — final gate 2026-11-24
+
+This supersedes the historical **142 browser checks / 105 unit tests** above. The pinned backend auth handler and payment constants were independently inspected with `gh` at `2af3f1e15c98c893a89255a037f551046883b8c0`; no upstream frontend implementation was consulted/copied. See `docs/api-contracts.md` for source links and exact wire fields.
+
+Final results after all production source fixes:
+
+- **Full static preview matrix: 144/144 checks passed, 67 screenshots.** Zero failures, runtime errors, unexpected console errors, failed requests, HTTP failures or unknown fixture endpoints. Source digest agrees at start/end: `304df4cee54c4b4e81817ef01926202dfbc2048ab0190825fccb0e679271a685`. Includes all responsive/theme routes, send-code captcha proof/countdown/reset, registration code flow, invalid code/registration gates, actual `order_created` URL/QR handling, unsupported OAuth/JSAPI without false payment, expired/cancelled/unknown results, and pending-order refresh/status/cancel recovery. Browser reports remain under `artifacts/cshell-web/acceptance/`.
+- **Frontend: 17 files / 110 tests passed**, zero-warning ESLint, typecheck and ordinary production build passed. Added tests prove Turnstile login proof and one-time reset using a stub API, send-code proof/countdown, unsupported captcha fail-closed, actual optional create fields, and resolve normalization without `paid`. Existing test-local locale stubs still produce non-fatal `keys.subtitle`/`keys.ipCountLabel` warnings; browser console error count is zero.
+- **Fixture: 5/5 Node tests passed.** Exact auth proof/message/countdown and code registration are checked; calling the nonexistent standalone verification endpoint is deliberately rejected by the fixture's unknown-endpoint 501. Its diagnostic log is intentional in this negative unit test, not a browser failure. Verify has `paid`, resolve does not. Scenario controls are fixture-only; production order payload has no `mock_result`.
+- **Production Rust browser runner: 4/4 checks, 3 screenshots, zero errors**, rerun against the final `web/dist` build and corrected fixture. Ordinary `/_cshell/` asset base, root history/reload, local brand assets, forwarded APIs and captcha-protected mock login passed. **Rust tests: 10/10**, binary build passed. Protocol proxy smoke passed **16 groups**, strictly loopback mocks.
+- Release artifacts regenerated with `node scripts/release-licenses.mjs npm`, `node scripts/release-artifacts.mjs package`, then `check`: **81 files / 60 npm dependencies / 31 distinct notice texts / zero unresolved**. No release script was edited. Final `git diff --check` and runner syntax checks passed.
+
+The first correction matrix exposed completed-order recovery hiding recharge controls; recovery now refreshes in place and permits explicit start-new for terminal orders. Subsequent diagnostic runs caught a duplicated browser payment-link click and a DOM-settling assertion race; both driver issues were corrected without weakening error gates, followed by the entire 144-check passing matrix. Earlier failed runs are not counted as final acceptance.
+
+Behavior and safety boundaries:
+
+- Real settings use `turnstile_enabled`; login/send-code use `turnstile_token`. Registration consumes `verify_code` and does not reuse send-code's one-time proof. Mock captcha requires the explicit local provider marker; unsupported enabled providers fail closed. Requests reset captcha and email resend honors backend countdown.
+- `/email-verify` clearly links back to registration and code entry; it never calls a fabricated standalone API. Passwords are held only by the registration component, never stored or put in URLs.
+- `order_created` uses actual `pay_amount`/URL/QR fields. Validated HTTP(S) payment links require an explicit click. `oauth_required` and `jsapi_ready` visibly explain unsupported checkout; no OAuth, JSAPI or payment is performed. Resolve uses actual status without demanding `paid`; refund statuses do not render a generic Paid result, and RECHARGING stays pending.
+- Pending checkout survives refresh using per-tab session storage containing **only owner user id + numeric order id**. Authenticated order detail restores status/amount/expiry; cancellation and new-order controls remain available. No password, resume token, QR, payment URL or provider/client secret is persisted. Provider launch details are intentionally unavailable after refresh; recovery is status/cancel, not fabricated provider resumption.
+
+Preview remains healthy at `http://127.0.0.1:4284/` in static mode with fixture on `127.0.0.1:41949`; historical ports are untouched. Production runner ephemeral services were cleaned up. No real email, Cloudflare verification, upstream registration, provider transaction, OAuth/JSAPI ceremony, database, credentials or real pinned-upstream deployment was exercised. These are source-derived contracts plus deterministic local verification, not live-provider acceptance. No commit, plan, push or release-script change was made.

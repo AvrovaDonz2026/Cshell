@@ -44,6 +44,14 @@ jobs:
       - name: Test
         run: cargo test --all-targets --all-features --locked
 
+      - name: Install Node for license gate
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Rust production dependency notices
+        run: node scripts/release-licenses.mjs rust
+
   web:
     name: Web frontend
     runs-on: ubuntu-latest
@@ -80,6 +88,12 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Resolve runtime notices and verify release artifact
+        run: |
+          node ../scripts/release-licenses.mjs npm
+          node ../scripts/release-artifacts.mjs package
+          node ../scripts/release-artifacts.mjs check
 
   proxy-smoke:
     name: Proxy smoke test
@@ -124,9 +138,19 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: cshell:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+
+      - name: Inspect image release contents without starting services
+        run: |
+          set -euo pipefail
+          cid=$(docker create cshell:ci)
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          docker export "$cid" -o "$RUNNER_TEMP/cshell-image.tar"
+          python3 scripts/release-image-check.py "$RUNNER_TEMP/cshell-image.tar"
 
 
   sub2api-integration:

@@ -41,6 +41,13 @@ withDefaults(
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+/* Touch targets stay at least 44px on small screens. */
+@media (max-width: 1023px) {
+  .cshell-btn {
+    min-height: 44px;
+  }
+}
+
 .cshell-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;

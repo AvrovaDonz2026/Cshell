@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { fetchSubscriptionSummary } from '@/api/billing'
 import { fetchDashboardStats } from '@/api/usage'
-import type { DashboardStats } from '@/api/types'
+import type { DashboardStats, SubscriptionSummary } from '@/api/types'
 import { ApiError } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
+const auth = useAuthStore()
+const settings = useSettingsStore()
 
 const stats = ref<DashboardStats | null>(null)
 const loading = ref(true)
 const error = ref('')
+
+const subscription = ref<SubscriptionSummary | null>(null)
+const subscriptionLoading = ref(false)
 
 function formatNumber(value: number | undefined): string {
   if (value == null || Number.isNaN(value)) return '—'
@@ -19,7 +27,70 @@ function formatNumber(value: number | undefined): string {
   )
 }
 
-onMounted(async () => {
+function formatMoney(value: number | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—'
+  const currency = settings.settings?.billing_currency
+  const text = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
+  return currency ? `${text} ${currency}` : text
+}
+
+const balanceText = computed(() => formatMoney(auth.user?.balance))
+
+const todayMetrics = computed(() => [
+  {
+    label: t('dashboard.todayRequests'),
+    value: formatNumber(stats.value?.today_requests),
+  },
+  {
+    label: t('dashboard.todayTokens'),
+    value: formatNumber(stats.value?.today_tokens),
+  },
+  {
+    label: t('dashboard.todayCost'),
+    value: formatNumber(stats.value?.today_cost),
+  },
+  {
+    label: t('dashboard.todayActualCost'),
+    value: formatNumber(stats.value?.today_actual_cost),
+  },
+])
+
+const totals = computed(() => [
+  {
+    label: t('dashboard.totalRequests'),
+    value: formatNumber(stats.value?.total_requests),
+  },
+  {
+    label: t('dashboard.totalTokens'),
+    value: formatNumber(stats.value?.total_tokens),
+  },
+  {
+    label: t('dashboard.totalCost'),
+    value: formatNumber(stats.value?.total_cost),
+  },
+  {
+    label: t('dashboard.totalActualCost'),
+    value: formatNumber(stats.value?.total_actual_cost),
+  },
+  {
+    label: t('dashboard.averageDuration'),
+    value: formatNumber(stats.value?.average_duration_ms),
+  },
+  {
+    label: t('dashboard.activeKeys'),
+    value: formatNumber(stats.value?.active_api_keys),
+  },
+  {
+    label: `${t('dashboard.rpm')} / ${t('dashboard.tpm')}`,
+    value: `${formatNumber(stats.value?.rpm)} / ${formatNumber(stats.value?.tpm)}`,
+  },
+])
+
+const activeSubscriptions = computed(
+  () => subscription.value?.active_count ?? null,
+)
+
+async function loadStats(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
@@ -32,157 +103,404 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+async function loadSubscription(): Promise<void> {
+  if (subscriptionLoading.value) return
+  subscriptionLoading.value = true
+  try {
+    subscription.value = await fetchSubscriptionSummary()
+  } catch {
+    // A missing summary must not break the dashboard; the card shows a dash.
+    subscription.value = null
+  } finally {
+    subscriptionLoading.value = false
+  }
+}
+
+watch(
+  () => settings.subscriptionEnabled,
+  (enabled) => {
+    if (enabled && subscription.value === null) void loadSubscription()
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  void loadStats()
 })
 </script>
 
 <template>
   <div class="page">
-    <h1>{{ t('pages.dashboard') }}</h1>
+    <header class="page__head">
+      <div class="page__head-text">
+        <h1>{{ t('pages.dashboard') }}</h1>
+        <p class="page__subtitle">
+          {{ t('dashboard.subtitle') }}
+        </p>
+      </div>
+    </header>
 
-    <p v-if="loading" role="status">
+    <p v-if="loading" role="status" class="state">
       {{ t('common.loading') }}
     </p>
     <p v-else-if="error" class="error" role="alert">
       {{ error }}
     </p>
 
-    <template v-else-if="stats">
-      <div class="cards">
-        <article class="card">
-          <h2>{{ t('dashboard.todayRequests') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.today_requests) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.todayTokens') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.today_tokens) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.todayCost') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.today_cost) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.totalRequests') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.total_requests) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.totalTokens') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.total_tokens) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.totalCost') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.total_cost) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.activeKeys') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.active_api_keys) }}
-          </p>
-        </article>
-        <article class="card">
-          <h2>{{ t('dashboard.rpm') }} / {{ t('dashboard.tpm') }}</h2>
-          <p class="card__value">
-            {{ formatNumber(stats.rpm) }} / {{ formatNumber(stats.tpm) }}
-          </p>
-        </article>
+    <div v-else-if="stats" class="layout">
+      <div class="main-col">
+        <section class="usage-block" :aria-labelledby="'dash-today-title'">
+          <div class="usage-block__head">
+            <h2 id="dash-today-title" class="section-title">
+              {{ t('dashboard.todayTitle') }}
+            </h2>
+            <p class="section-caption">
+              {{ t('dashboard.todayCaption') }}
+            </p>
+          </div>
+          <dl class="metric-strip">
+            <div v-for="item in todayMetrics" :key="item.label" class="metric">
+              <dd class="metric__value">{{ item.value }}</dd>
+              <dt class="metric__caption">{{ item.label }}</dt>
+            </div>
+          </dl>
+        </section>
+
+        <section class="totals" :aria-labelledby="'dash-totals-title'">
+          <div class="totals__head">
+            <h2 id="dash-totals-title" class="section-title">
+              {{ t('dashboard.totalsTitle') }}
+            </h2>
+            <p class="section-caption">
+              {{ t('dashboard.totalsCaption') }}
+            </p>
+          </div>
+          <div class="totals__grid">
+            <article v-for="item in totals" :key="item.label" class="total-card">
+              <p class="total-card__value">{{ item.value }}</p>
+              <p class="total-card__caption">{{ item.label }}</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="quick" :aria-label="t('dashboard.quickLinks')">
+          <h2 class="section-title">{{ t('dashboard.quickLinks') }}</h2>
+          <div class="quick__row">
+            <RouterLink class="quick__link" :to="{ name: 'usage' }">
+              {{ t('dashboard.linkUsage') }}
+            </RouterLink>
+            <RouterLink class="quick__link" :to="{ name: 'keys' }">
+              {{ t('dashboard.linkKeys') }}
+            </RouterLink>
+            <RouterLink
+              v-if="settings.paymentEnabled || settings.subscriptionEnabled"
+              class="quick__link"
+              :to="{ name: 'purchase' }"
+            >
+              {{ t('dashboard.linkPurchase') }}
+            </RouterLink>
+          </div>
+        </section>
       </div>
 
-      <section class="links" :aria-label="t('dashboard.quickLinks')">
-        <h2>{{ t('dashboard.quickLinks') }}</h2>
-        <div class="links__row">
-          <RouterLink class="link" :to="{ name: 'usage' }">
-            {{ t('dashboard.linkUsage') }}
+      <aside class="rail" :aria-label="t('dashboard.railLabel')">
+        <article class="rail-card">
+          <h2 class="rail-card__title">{{ t('dashboard.balanceTitle') }}</h2>
+          <p class="rail-card__value">{{ balanceText }}</p>
+          <p class="rail-card__caption">{{ t('dashboard.balanceCaption') }}</p>
+        </article>
+
+        <article v-if="settings.subscriptionEnabled" class="rail-card">
+          <h2 class="rail-card__title">{{ t('dashboard.planTitle') }}</h2>
+          <p class="rail-card__value">
+            {{
+              subscriptionLoading
+                ? t('common.loading')
+                : activeSubscriptions === null
+                  ? '—'
+                  : activeSubscriptions
+            }}
+          </p>
+          <p class="rail-card__caption">{{ t('dashboard.planCaption') }}</p>
+          <RouterLink class="rail-card__link" :to="{ name: 'subscriptions' }">
+            {{ t('dashboard.linkSubscriptions') }}
           </RouterLink>
-          <RouterLink class="link" :to="{ name: 'keys' }">
-            {{ t('dashboard.linkKeys') }}
-          </RouterLink>
-          <RouterLink class="link" :to="{ name: 'purchase' }">
-            {{ t('dashboard.linkPurchase') }}
-          </RouterLink>
-        </div>
-      </section>
-    </template>
+        </article>
+
+        <article class="rail-card">
+          <h2 class="rail-card__title">{{ t('dashboard.quickLinks') }}</h2>
+          <div class="rail-card__links">
+            <RouterLink class="rail-card__link" :to="{ name: 'keys' }">
+              {{ t('dashboard.linkKeys') }}
+            </RouterLink>
+            <RouterLink class="rail-card__link" :to="{ name: 'profile' }">
+              {{ t('dashboard.linkProfile') }}
+            </RouterLink>
+            <RouterLink
+              v-if="settings.paymentEnabled || settings.subscriptionEnabled"
+              class="rail-card__link"
+              :to="{ name: 'orders' }"
+            >
+              {{ t('dashboard.linkOrders') }}
+            </RouterLink>
+          </div>
+        </article>
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .page {
   display: grid;
-  gap: 1.25rem;
+  gap: 1.5rem;
   min-width: 0;
+}
+
+.page__head-text {
+  display: grid;
+  gap: 0.3rem;
 }
 
 .page h1 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.7rem;
+  letter-spacing: -0.01em;
 }
 
-.cards {
+.page__subtitle {
+  margin: 0;
+  color: var(--cshell-text-muted);
+  font-size: 0.94rem;
+}
+
+.layout {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.85rem;
-}
-
-.card {
-  padding: 1rem;
-  border-radius: var(--cshell-radius-panel);
-  background: var(--cshell-surface);
-  border: 1px solid var(--cshell-border);
-  box-shadow: var(--cshell-shadow);
+  gap: 1.5rem;
+  align-items: start;
   min-width: 0;
 }
 
-.card h2 {
+.main-col {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.section-title {
   margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.section-caption {
+  margin: 0.15rem 0 0;
+  font-size: 0.84rem;
   color: var(--cshell-text-muted);
 }
 
-.card__value {
-  margin: 0.45rem 0 0;
-  font-size: 1.45rem;
+.usage-block {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.35rem;
+  border-radius: var(--cshell-radius-panel);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-surface);
+  min-width: 0;
+}
+
+.usage-block__head {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--cshell-border);
+}
+
+.metric {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.metric__value {
+  margin: 0;
+  font-size: clamp(1.3rem, 2.4vw, 1.75rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
-.links h2 {
-  margin: 0 0 0.65rem;
-  font-size: 1rem;
+.metric__caption {
+  font-size: 0.8rem;
+  color: var(--cshell-text-muted);
 }
 
-.links__row {
+.totals {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.totals__head {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.totals__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.total-card {
+  padding: 1rem 1.1rem;
+  border-radius: var(--cshell-radius-panel);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-surface);
+  min-width: 0;
+}
+
+.total-card__value {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.total-card__caption {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--cshell-text-muted);
+}
+
+.quick {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.quick__row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem;
+  gap: 0.5rem;
 }
 
-.link {
+.quick__link {
   display: inline-flex;
   align-items: center;
   min-height: 2.5rem;
   padding: 0.4rem 0.9rem;
   border-radius: var(--cshell-radius-control);
-  background: var(--cshell-accent-soft);
+  background: var(--cshell-surface);
+  border: 1px solid var(--cshell-border);
   color: var(--cshell-text);
   text-decoration: none;
   font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.quick__link:hover {
+  border-color: var(--cshell-accent);
+}
+
+.rail {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.rail-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.15rem;
+  border-radius: var(--cshell-radius-panel);
+  border: 1px solid var(--cshell-border);
+  background: var(--cshell-bg-elevated);
+  min-width: 0;
+}
+
+.rail-card__title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cshell-text-muted);
+}
+
+.rail-card__value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.rail-card__caption {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--cshell-text-muted);
+  line-height: 1.5;
+}
+
+.rail-card__links {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.rail-card__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  font-size: 0.86rem;
+  color: var(--cshell-accent);
+  text-decoration: none;
+}
+
+.rail-card__link:hover {
+  text-decoration: underline;
+}
+
+.state {
+  margin: 0;
+  color: var(--cshell-text-muted);
 }
 
 .error {
   margin: 0;
   color: var(--cshell-danger);
+}
+
+@media (max-width: 640px) {
+  .metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 1.25rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 17rem;
+  }
+
+  .rail {
+    position: sticky;
+    top: 5rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  .quick__link,
+  .rail-card__link {
+    min-height: 44px;
+  }
 }
 </style>
