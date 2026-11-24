@@ -937,7 +937,7 @@ try {
     await check(
       'dashboard heatmap scale switch re-queries the real trend',
       async () => {
-        const group = page.locator('.dashboard-filters [role="group"]').first()
+        const group = page.locator('.dashboard-filters [role="group"][aria-label="Heatmap time scale"]').first()
         await group.waitFor()
         const buttons = group.locator('button')
         const count = await buttons.count()
