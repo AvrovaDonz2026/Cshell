@@ -214,3 +214,41 @@ Implemented (local verification scope):
 - `.github/workflows/ci.yml`: dual matrix jobs (API + browser), binary/dist artifact reuse, daily schedule + workflow_dispatch, aggregate `ci-required` gate failing on any non-success dependency. Structural validation passed (no tabs, all jobs present, no continue-on-error).
 
 NOT executed locally: full container `up`/`configure` run (no Docker CLI on this host; Podman differs in the exact docker-CLI surface the harness uses) and therefore no local end-to-end API/browser run against a live upstream. Remote CI run for this change is also pending until it is pushed. These remain honestly unexecuted rather than claimed.
+
+
+## Real-backend browser gate vs the local mock matrix — 2026-11-24
+
+`scripts/sub2api-browser.mjs` is a separate, stricter gate from the local mock acceptance suite. They answer different questions and neither replaces the other.
+
+| | Local mock matrix (`scripts/cshell-web-browser.mjs`) | Real-backend browser gate (`scripts/sub2api-browser.mjs`) |
+|---|---|---|
+| Backend | Deterministic loopback fixture | Deployed Sub2API behind Cshell, reached only through the proxy |
+| Responses | Mocked by design; contract shapes are asserted in the fixture | Real; any business-response interception or fixture is an error |
+| Frontend | `web/` dev/preview or production `web/dist` | Downloaded production `web/dist` only |
+| Breadth | Broad UI/theme/locale/geometry/short-viewport matrix, admin and guest exclusions, payment result scenarios | Narrow and deep: guest home, real sign-in, stats/trend, heatmap scales, key lifecycle, profile round-trip, logout, admin redirect, billing-disabled pages |
+| Negative responses | Declared per page with exact method/path/status/count | Same discipline, but only one declared negative (a rejected login) because real state cannot be scripted |
+| Purpose | Prove the UI contract is self-consistent | Prove the production bundle actually works against a real gateway |
+
+Coverage of the real-backend gate (Playwright from `web/package.json`, Chromium, loopback-only base or it fails closed):
+
+- **Production serving:** `/` returns SPA HTML, every referenced `/_cshell/` asset returns 200, `/dashboard` and `/login` deep links serve the shell, and `/api/v1/settings/public` forwards through Cshell as a valid envelope. All of this runs before Chromium launches, so a broken proxy fails fast.
+- **Guest:** home renders the public SPA with the `/_cshell/`-prefixed bundle and no authenticated shell; one deliberately rejected login declares its exact status and then retires the exemption.
+- **Desktop light user flow:** real sign-in lands on `/dashboard`; stats/trend render without an error alert (zero usage is acceptable); all three dashboard and all four usage heatmap scales re-query and settle into either a grid or the explicit empty state; key create → appears → edit → rename persists → delete → gone; profile username update persists and is reverted; logout clears storage and a protected route redirects to `/login`.
+- **Desktop dark and mobile light:** same account, no destructive key operations. Theme and locale switch, persist across reloads, section/drawer navigation is reachable, every route is checked for `scrollWidth <= innerWidth + 1`, and no runtime errors are tolerated.
+- **Admin:** signs in with the admin credentials, must reach the upstream `/admin` surface, and must not receive the `.cshell-user-workspace` shell. The upstream admin UI is deliberately not crawled; its own console/network noise is recorded out of band instead of being normalised away.
+- **Billing:** when payments are disabled the purchase/orders routes redirect away; when enabled they must render with no runtime errors and never expose a paid order chip, a pending payment panel, or a `/payment/result` navigation.
+- **Strict accounting:** `pageerror`, console errors, `requestfailed` and HTTP >= 400 all fail the run. The only tolerated noise is a same-origin `net::ERR_ABORTED` GET on `/api/v1/usage*`, which the SPA produces when it cancels a stale trend/log fetch during a filter or scale change. Expected negatives require an exact method/path/status/count declared before the response and are removed afterwards.
+- **Evidence:** screenshots plus `results.json` and `summary.md` under `artifacts/sub2api-browser/` (override with `SUB2API_BROWSER_ARTIFACTS`). Passwords, access/refresh tokens, `Authorization` headers and token query parameters are redacted from every log, URL and report field; session storage is reported only as booleans, and the one-time API key secret panel is never screenshotted. Playwright traces are intentionally not enabled so a token-bearing trace cannot be uploaded by accident.
+- **Fail closed:** an unreachable Cshell, a non-ready upstream, missing credentials, an enabled interactive captcha, or a non-loopback `CSHELL_BASE_URL` is a hard failure. The gate never skips and never downgrades to a skip.
+
+Run it with:
+
+```sh
+CSHELL_BASE_URL=http://127.0.0.1:18080 \
+SUB2API_TEST_EMAIL=... SUB2API_TEST_PASSWORD=... \
+SUB2API_ADMIN_EMAIL=... SUB2API_ADMIN_PASSWORD=... \
+SUB2API_UPSTREAM_ID=<commit-or-image-digest> \
+  node scripts/sub2api-browser.mjs
+```
+
+Execution status: **not executed locally against a real Sub2API.** No Cshell instance plus real upstream was reachable at `CSHELL_BASE_URL` in this workspace, and starting external containers was out of scope for this change. What was verified locally is `node --check`, plus the gate's own control flow exercised against a throwaway in-process stand-in serving the real `web/dist`: all 15 checks passed with zero runtime/console/request/HTTP errors, and separately confirmed the gate exits non-zero for a broken `/_cshell/` asset, an unexpected HTTP 500, an undeclared 401, a declared negative that never occurs, an injected `pageerror`, and an injected horizontal overflow. Those stand-in runs are script self-tests, not evidence about a real backend, and no artifacts from them are claimed as acceptance. The real-backend result remains pending a CI run in an environment with a live Sub2API.

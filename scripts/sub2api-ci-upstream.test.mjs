@@ -154,33 +154,38 @@ test('buildCommand raises the Node heap through a bounded build arg', () => {
   assert.equal(args[1], 'build');
   assert.ok(args.includes('--build-arg'));
   const index = args.indexOf('--build-arg');
-  assert.equal(args[index + 1], 'NODE_OPTIONS=--max-old-space-size=6144');
+  assert.equal(args[index + 1], 'CSHELL_BUILD_NODE_OPTIONS=--max-old-space-size=6144');
   assert.equal(args.at(-1), '/tmp/src');
 });
 
 test('buildCommand defaults to a 4 GiB heap, above the failing 1.5 GiB default', () => {
   assert.equal(DEFAULT_BUILD_NODE_OPTIONS, '--max-old-space-size=4096');
   const args = buildCommand({ engine: 'podman', dockerfile: 'Dockerfile', context: '.', tag: 'x:1' });
-  assert.ok(args.includes(`NODE_OPTIONS=${DEFAULT_BUILD_NODE_OPTIONS}`));
+  assert.ok(args.includes(`CSHELL_BUILD_NODE_OPTIONS=${DEFAULT_BUILD_NODE_OPTIONS}`));
 });
 
-test('patchDockerfileForMemory overrides the pinned upstream ENV NODE_OPTIONS', () => {
+test('patchDockerfileForMemory replaces the pinned ENV instead of shadowing it', () => {
   const upstream = [
     'FROM node:24-alpine AS frontend-builder',
     'ENV NODE_OPTIONS=--max-old-space-size=1536',
     'RUN pnpm run build',
   ].join('\n');
   const patched = patchDockerfileForMemory(upstream);
-  assert.ok(patched.includes('ARG NODE_OPTIONS=--max-old-space-size=4096'));
-  assert.ok(patched.includes('ENV NODE_OPTIONS=${NODE_OPTIONS}'));
-  // The override must come after the pinned value so it wins, and before the build.
-  assert.ok(patched.indexOf('ARG NODE_OPTIONS=') > patched.indexOf('ENV NODE_OPTIONS=--max-old-space-size=1536'));
-  assert.ok(patched.indexOf('ARG NODE_OPTIONS=') < patched.indexOf('RUN pnpm run build'));
+  // An ARG named NODE_OPTIONS would lose to the earlier ENV of the same name, so the
+  // override must be a differently named ARG feeding the ENV.
+  assert.ok(patched.includes('ARG CSHELL_BUILD_NODE_OPTIONS=--max-old-space-size=4096'));
+  assert.ok(patched.includes('ENV NODE_OPTIONS=${CSHELL_BUILD_NODE_OPTIONS}'));
+  assert.ok(!patched.includes('ENV NODE_OPTIONS=--max-old-space-size=1536'));
+  assert.ok(patched.indexOf('ARG CSHELL_BUILD_NODE_OPTIONS=') < patched.indexOf('RUN pnpm run build'));
 });
 
 test('patchDockerfileForMemory rejects an invalid size and an unknown Dockerfile', () => {
   assert.throws(() => patchDockerfileForMemory('ENV NODE_OPTIONS=--max-old-space-size=1536', '4096'), /invalid node options/);
   assert.throws(() => patchDockerfileForMemory('FROM alpine'), /no longer contains the NODE_OPTIONS marker/);
+  assert.throws(
+    () => patchDockerfileForMemory('ENV NODE_OPTIONS=--max-old-space-size=1536\nARG CSHELL_BUILD_NODE_OPTIONS=1'),
+    /already defines CSHELL_BUILD_NODE_OPTIONS/,
+  );
 });
 
 test('baselineImageTag is derived from the pinned commit', () => {

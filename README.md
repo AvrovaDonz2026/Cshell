@@ -79,7 +79,19 @@ OAuth 服务端回调通常是 `/api/v1/auth/oauth/<provider>/callback`；身份
 
 ## CI
 
-GitHub Actions runs on pushes to `main` and pull requests. It checks Rust formatting, Clippy, and tests with Rust 1.93.0; checks the independent `web/` frontend with Node.js 24 and pnpm 10.11.0; runs the proxy smoke test; and builds the Docker image without publishing it. The workflow is defined in `.github/workflows/ci.yml`.
+GitHub Actions 在推送到 `main`、pull request、每日定时（`17 4 * * *`）和手动 `workflow_dispatch` 时运行 `.github/workflows/ci.yml`。工作流只有 `contents: read` 权限，无 `continue-on-error`。
+
+分层如下：
+
+- **基础检查**：Rust 1.93.0 的 fmt / Clippy / test（`RUSTFLAGS=-D warnings`，`--locked`），Node.js 24 + pnpm 10.11.0 的 `web/` lint / typecheck / test / 生产构建与发布产物校验，CI 脚本的 `node --check` 与 `node --test`，代理冒烟测试，以及不推送的 Docker 镜像构建与镜像内容检查。
+- **真实后端双版本兼容性**：`sub2api-integration` 与 `sub2api-browser` 各有两个矩阵项，`baseline-source` 用固定提交 `2af3f1e15c98c893a89255a037f551046883b8c0` 构建，`latest-image` 每轮解析 `docker.io/weishaw/sub2api:latest` 的 linux/amd64 digest 并用 `image@sha256:…` 启动。`fail-fast: false`，两组都跑同一套契约。
+- **聚合门槛**：`ci-required` 使用 `if: always()`，任一依赖 job 不是 `success`（含 `failure`、`cancelled`、`skipped`）即失败。把 `ci-required` 配为分支保护的必需检查；工作流不自行修改分支保护。
+
+`rust` 与 `web` 各上传一次构建产物（`target/debug/cshell`、`web/dist`），下游真实后端 job 复用，不重复编译。后端由 `scripts/sub2api-ci-upstream.mjs` 统一供给：per-attempt 隔离 bridge 网络、不发布数据库/Redis 端口、上游按 digest 运行、有界等待 `/health`，随后通过真实管理 API 配置注册门控、关闭验证码/邮件/支付并读回校验。若配置无法证实，job 直接失败而不是继续跑。清理在 `if: always()` 执行。
+
+固定提交的 `deploy/Dockerfile` 硬编码 `NODE_OPTIONS=--max-old-space-size=1536`，会让 `pnpm run build` 堆溢出（exit 134，GitHub run 45366350441）。CI 用构建参数把上限提高到 4096 MiB，细节与实测记录见 [兼容性清单](docs/compatibility.md)。
+
+本地复现命令与 job 依赖图见 [兼容性清单](docs/compatibility.md)。真实后端测试不使用生产凭证，也不发起真实支付、邮件或模型调用。
 
 ## 许可证范围
 

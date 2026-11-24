@@ -138,18 +138,21 @@ export function pickPlatformDigest(index, platform = DEFAULT_PLATFORM) {
 }
 
 // The pinned upstream Dockerfile fixes ENV NODE_OPTIONS=--max-old-space-size=1536,
-// which OOM-killed `pnpm run build` (exit 134) on a 2026-11 GitHub runner. Add an
-// override ARG/ENV pair directly after that line so --build-arg can raise the heap
-// without forking the rest of the upstream build definition.
+// which OOM-killed `pnpm run build` (exit 134) on a 2026-11 GitHub runner. An ARG
+// with the same name as an existing ENV is shadowed by that ENV, so the override
+// must replace the ENV line itself using a distinctly named ARG.
 export function patchDockerfileForMemory(source, nodeOptions = DEFAULT_BUILD_NODE_OPTIONS) {
   const marker = 'ENV NODE_OPTIONS=--max-old-space-size=1536';
   if (!source.includes(marker)) {
     throw new Error('upstream Dockerfile no longer contains the NODE_OPTIONS marker; review the memory mitigation');
   }
   if (!/^--max-old-space-size=\d+$/.test(nodeOptions)) throw new Error(`invalid node options: ${nodeOptions}`);
+  if (source.includes('ARG CSHELL_BUILD_NODE_OPTIONS=')) {
+    throw new Error('upstream Dockerfile already defines CSHELL_BUILD_NODE_OPTIONS; review the memory mitigation');
+  }
   return source.replace(
     marker,
-    `${marker}\nARG NODE_OPTIONS=${nodeOptions}\nENV NODE_OPTIONS=\${NODE_OPTIONS}`,
+    `ARG CSHELL_BUILD_NODE_OPTIONS=${nodeOptions}\nENV NODE_OPTIONS=\${CSHELL_BUILD_NODE_OPTIONS}`,
   );
 }
 
@@ -163,7 +166,7 @@ export function buildCommand({ engine, dockerfile, context, tag, nodeOptions = D
     '--tag',
     tag,
     '--build-arg',
-    `NODE_OPTIONS=${nodeOptions}`,
+    `CSHELL_BUILD_NODE_OPTIONS=${nodeOptions}`,
     context,
   ];
 }
@@ -476,6 +479,9 @@ export function parseArgs(argv) {
 
 async function provision({ engine, mode, names, dbPassword, adminEmail, adminPassword, jwtSecret, imageReference, timings }) {
   const created = [];
+  // The suffix is randomized, so a pre-existing network means a stale resource is in
+  // the way; remove it rather than failing on a name collision.
+  runEngine(engine, ['network', 'rm', '--force', names.network], { allowFailure: true, quiet: true });
   runEngine(engine, ['network', 'create', '--driver', 'bridge', names.network]);
 
   runEngine(engine, [
@@ -527,7 +533,7 @@ async function provision({ engine, mode, names, dbPassword, adminEmail, adminPas
     '-e', `SERVER_PORT=${UPSTREAM_INTERNAL_PORT}`,
     '-e', 'SERVER_MODE=release',
     '-e', 'TZ=UTC',
-    '-e', `DATABASE_HOST=${'postgres'}`,
+    '-e', 'DATABASE_HOST=postgres',
     '-e', 'DATABASE_PORT=5432',
     '-e', 'DATABASE_USER=sub2api',
     '-e', `DATABASE_PASSWORD=${dbPassword}`,
@@ -605,6 +611,30 @@ async function commandUp(options, env) {
   const jwtSecret = randomBytes(32).toString('hex');
   const timings = { resolveMs: 0, buildMs: 0, provisionMs: 0, healthMs: 0 };
 
+  // Written up-front so a failed run still leaves a manifest naming the containers
+  // and image it was using; `down` and diagnostics can then work off it.
+  const manifest = {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    mode,
+    platform: 'linux/amd64',
+    engine,
+    engineVersion: engineVersion(engine),
+    suffix,
+    names,
+    network: names.network,
+    dataVolume: names.dataVolume,
+    hostPort: null,
+    upstreamUrl: null,
+    imageReference: null,
+    resolved: null,
+    health: null,
+    attempts: {},
+    timings,
+    status: 'provisioning',
+    createdAt: new Date().toISOString(),
+  };
+  await writeManifest(manifestPath, manifest);
+
   let resolved;
   let imageReference;
   let attempts = {};
@@ -632,6 +662,8 @@ async function commandUp(options, env) {
     };
   }
   timings.resolveMs = Date.now() - resolveStarted - timings.buildMs;
+  Object.assign(manifest, { imageReference, resolved, attempts, status: 'provisioning' });
+  await writeManifest(manifestPath, manifest);
 
   const provisionStarted = Date.now();
   let provisioned;
@@ -639,31 +671,42 @@ async function commandUp(options, env) {
     provisioned = await provision({
       engine, mode, names, dbPassword, adminEmail, adminPassword, jwtSecret, imageReference, timings,
     });
-  } finally {
+  } catch (error) {
     timings.provisionMs = Date.now() - provisionStarted;
+    // Do not leak a half-built network or warm containers when provisioning fails;
+    // the manifest is still on disk with status=failed for post-mortem inspection.
+    Object.assign(manifest, {
+      timings: { ...timings, totalMs: Date.now() - totalStarted },
+      status: 'failed',
+      error: sanitize(error?.message || String(error)),
+    });
+    await writeManifest(manifestPath, manifest);
+    await cleanupResources(engine, names);
+    throw error;
   }
+  timings.provisionMs = Date.now() - provisionStarted;
 
-  const manifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    mode,
-    platform: 'linux/amd64',
-    engine,
-    engineVersion: engineVersion(engine),
-    suffix,
-    names,
-    network: names.network,
-    dataVolume: names.dataVolume,
+  Object.assign(manifest, {
     hostPort: provisioned.hostPort,
     upstreamUrl: provisioned.upstreamUrl,
-    imageReference,
-    resolved,
     health: provisioned.health,
-    attempts,
     timings: { ...timings, totalMs: Date.now() - totalStarted },
-    createdAt: new Date().toISOString(),
-  };
+    status: 'ready',
+  });
   await writeManifest(manifestPath, manifest);
   return { ...manifest, manifestPath };
+}
+
+async function cleanupResources(engine, names) {
+  const removed = [];
+  for (const container of [names.upstream, names.redis, names.db]) {
+    if (!container) continue;
+    const result = runEngine(engine, ['rm', '--force', '--volumes', container], { allowFailure: true, quiet: true });
+    removed.push({ container, removed: result.status === 0 });
+  }
+  if (names.dataVolume) runEngine(engine, ['volume', 'rm', '--force', names.dataVolume], { allowFailure: true, quiet: true });
+  if (names.network) runEngine(engine, ['network', 'rm', '--force', names.network], { allowFailure: true, quiet: true });
+  return removed;
 }
 
 async function commandDown(options, env) {
@@ -671,18 +714,7 @@ async function commandDown(options, env) {
   const manifest = await readManifestFile(manifestPath);
   const engine = containerEngine(env);
   const names = manifest?.names || containerNames(options.suffix || uniqueSuffix(env));
-  const removed = [];
-  for (const container of [names.upstream, names.redis, names.db]) {
-    if (!container) continue;
-    const result = runEngine(engine, ['rm', '--force', '--volumes', container], { allowFailure: true, quiet: true });
-    removed.push({ container, removed: result.status === 0 });
-  }
-  if (names.dataVolume) {
-    runEngine(engine, ['volume', 'rm', '--force', names.dataVolume], { allowFailure: true, quiet: true });
-  }
-  if (names.network) {
-    runEngine(engine, ['network', 'rm', '--force', names.network], { allowFailure: true, quiet: true });
-  }
+  const removed = await cleanupResources(engine, names);
   return { engine, removed, network: names.network, manifestPath, mode: manifest?.mode || null };
 }
 
@@ -746,9 +778,8 @@ async function commandConfigure(options, env) {
 
   const compliance = await adminRequest(baseUrl, '/api/v1/admin/compliance', { token: adminToken });
   if (compliance.status >= 400) fail(`admin compliance status failed: HTTP ${compliance.status}`);
-  let complianceData = envelopeData(compliance);
-  if (complianceData?.required === true) {
-    const phrase = complianceData.ack_phrase_en || complianceData.ack_phrase_zh;
+  const complianceData = envelopeData(compliance);
+  if (complianceData?.required === true) {    const phrase = complianceData.ack_phrase_en || complianceData.ack_phrase_zh;
     if (!phrase) fail('admin compliance required but no acknowledgement phrase was returned');
     const accepted = await adminRequest(baseUrl, '/api/v1/admin/compliance/accept', {
       method: 'POST',
