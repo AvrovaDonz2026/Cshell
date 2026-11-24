@@ -55,51 +55,53 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
       {{ error }}
     </p>
 
-    <div v-else class="layout">
-      <section class="panel" :aria-labelledby="'subs-list-title'">
-        <div class="panel__head">
-          <h2 id="subs-list-title" class="panel__title">
-            {{ t('subscriptions.listTitle') }}
+    <div v-else class="content-panel">
+      <div class="layout">
+        <section class="panel" :aria-labelledby="'subs-list-title'">
+          <div class="panel__head">
+            <h2 id="subs-list-title" class="panel__title">
+              {{ t('subscriptions.listTitle') }}
+            </h2>
+            <p class="panel__caption">{{ t('subscriptions.listCaption') }}</p>
+          </div>
+
+          <p v-if="!items.length" role="status" class="state">
+            {{ t('subscriptions.empty') }}
+          </p>
+
+          <ul v-else class="list">
+            <li v-for="(item, index) in items" :key="item.id ?? index" class="item">
+              <div class="item__main">
+                <h3 class="item__name">
+                  {{ item.plan_name || item.name || `#${item.id ?? index + 1}` }}
+                </h3>
+                <p class="item__meta">
+                  {{ t('subscriptions.status') }}: {{ item.status || '—' }}
+                </p>
+                <p class="item__meta">
+                  {{ t('subscriptions.expires') }}: {{ item.expires_at || '—' }}
+                </p>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <aside class="rail" :aria-labelledby="'subs-meta-title'">
+          <h2 id="subs-meta-title" class="panel__title">
+            {{ t('subscriptions.metaTitle') }}
           </h2>
-          <p class="panel__caption">{{ t('subscriptions.listCaption') }}</p>
-        </div>
-
-        <p v-if="!items.length" role="status" class="state">
-          {{ t('subscriptions.empty') }}
-        </p>
-
-        <ul v-else class="list">
-          <li v-for="(item, index) in items" :key="item.id ?? index" class="item">
-            <div class="item__main">
-              <h3 class="item__name">
-                {{ item.plan_name || item.name || `#${item.id ?? index + 1}` }}
-              </h3>
-              <p class="item__meta">
-                {{ t('subscriptions.status') }}: {{ item.status || '—' }}
-              </p>
-              <p class="item__meta">
-                {{ t('subscriptions.expires') }}: {{ item.expires_at || '—' }}
-              </p>
+          <dl class="facts">
+            <div class="fact">
+              <dt class="fact__label">{{ t('subscriptions.activeCount') }}</dt>
+              <dd class="fact__value">{{ activeCount }}</dd>
             </div>
-          </li>
-        </ul>
-      </section>
-
-      <aside class="rail" :aria-labelledby="'subs-meta-title'">
-        <h2 id="subs-meta-title" class="panel__title">
-          {{ t('subscriptions.metaTitle') }}
-        </h2>
-        <dl class="facts">
-          <div class="fact">
-            <dt class="fact__label">{{ t('subscriptions.activeCount') }}</dt>
-            <dd class="fact__value">{{ activeCount }}</dd>
-          </div>
-          <div class="fact">
-            <dt class="fact__label">{{ t('subscriptions.totalCount') }}</dt>
-            <dd class="fact__value">{{ items.length }}</dd>
-          </div>
-        </dl>
-      </aside>
+            <div class="fact">
+              <dt class="fact__label">{{ t('subscriptions.totalCount') }}</dt>
+              <dd class="fact__value">{{ items.length }}</dd>
+            </div>
+          </dl>
+        </aside>
+      </div>
     </div>
   </div>
 </template>
@@ -107,8 +109,10 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
+  width: min(100%, var(--cshell-content-width));
   min-width: 0;
+  margin-inline: auto;
 }
 
 .page__head-text {
@@ -118,14 +122,24 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
+}
+
+.content-panel {
+  display: grid;
+  gap: 1rem;
+  padding: var(--cshell-panel-padding);
+  border: 1px solid var(--cshell-border);
+  border-radius: var(--cshell-radius-panel);
+  background: var(--cshell-surface);
+  min-width: 0;
 }
 
 .layout {
@@ -137,7 +151,7 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 .panel {
   display: grid;
   gap: 1rem;
-  padding: 1.25rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
@@ -151,12 +165,12 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 
 .panel__title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: var(--cshell-type-section);
 }
 
 .panel__caption {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
@@ -193,10 +207,10 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 .rail {
   display: grid;
   gap: 0.85rem;
-  padding: 1.25rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
-  background: var(--cshell-bg-elevated);
+  background: var(--cshell-surface-muted);
   align-content: start;
   min-width: 0;
 }
@@ -234,6 +248,12 @@ const activeCount = computed(() => summary.value?.active_count ?? 0)
 .error {
   margin: 0;
   color: var(--cshell-danger);
+}
+
+@media (max-width: 760px) {
+  .content-panel {
+    padding: var(--cshell-panel-padding-mobile);
+  }
 }
 
 @media (min-width: 1024px) {

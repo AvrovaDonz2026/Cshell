@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { popDialog, pushDialog } from '@/lib/dialogContext'
+import { getPopupPosition } from '@/lib/popupPosition'
 
 export interface SelectOption {
   value: string
@@ -23,6 +24,7 @@ const props = withDefaults(
 const model = defineModel<string>({ default: '' })
 
 const open = ref(false)
+const ownerId = `cshell-select-${Math.random().toString(36).slice(2)}`
 const rootRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
@@ -38,14 +40,7 @@ function positionList(): void {
   const trigger = triggerRef.value
   if (!trigger) return
   const rect = trigger.getBoundingClientRect()
-  const maxHeight = Math.min(280, window.innerHeight - rect.bottom - 8)
-  listStyle.value = {
-    top: `${Math.round(rect.bottom + 4)}px`,
-    left: `${Math.round(rect.left)}px`,
-    width: `${Math.round(rect.width)}px`,
-    maxHeight: `${Math.max(120, maxHeight)}px`,
-    overflow: 'auto',
-  }
+  listStyle.value = getPopupPosition(rect, listRef.value?.scrollHeight ?? 280)
 }
 
 function close(): void {
@@ -71,6 +66,14 @@ function onDocumentPointer(event: MouseEvent): void {
   close()
 }
 
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (!open.value || event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  close()
+  nextTick(() => triggerRef.value?.focus())
+}
+
 function onListKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     // dialogContext capture on the parent dialog handles Escape via the stack.
@@ -81,12 +84,24 @@ function onListKeydown(event: KeyboardEvent): void {
   }
 }
 
+const reposition = () => { if (open.value) positionList() }
+
 onMounted(() => {
+  window.addEventListener('scroll', reposition, true)
+  window.addEventListener('resize', reposition)
+  window.visualViewport?.addEventListener('resize', reposition)
+  window.visualViewport?.addEventListener('scroll', reposition)
   document.addEventListener('mousedown', onDocumentPointer)
+  document.addEventListener('keydown', onDocumentKeydown, true)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('scroll', reposition, true)
+  window.removeEventListener('resize', reposition)
+  window.visualViewport?.removeEventListener('resize', reposition)
+  window.visualViewport?.removeEventListener('scroll', reposition)
   document.removeEventListener('mousedown', onDocumentPointer)
+  document.removeEventListener('keydown', onDocumentKeydown, true)
   if (layerId.value != null) {
     popDialog(layerId.value)
     layerId.value = null
@@ -95,6 +110,7 @@ onBeforeUnmount(() => {
 
 watch(open, async (isOpen) => {
   if (isOpen) {
+    await nextTick()
     positionList()
     layerId.value = pushDialog({
       onEscape: () => {
@@ -113,7 +129,7 @@ watch(open, async (isOpen) => {
 </script>
 
 <template>
-  <div ref="rootRef" class="cshell-select" :data-open="open ? 'true' : 'false'">
+  <div ref="rootRef" class="cshell-select" :data-select-owner="ownerId" :data-open="open ? 'true' : 'false'">
     <button
       :id="id"
       ref="triggerRef"
@@ -131,6 +147,7 @@ watch(open, async (isOpen) => {
         v-if="open"
         ref="listRef"
         class="cshell-select__list"
+        :data-select-owner="ownerId"
         role="listbox"
         tabindex="-1"
         :style="listStyle"
@@ -159,21 +176,18 @@ watch(open, async (isOpen) => {
 
 .cshell-select__trigger {
   width: 100%;
-  min-height: 2.5rem;
-  padding: 0.5rem 0.75rem;
+  height: var(--cshell-control-height, 44px);
+  padding: 0 var(--cshell-space-3, 0.75rem);
   text-align: left;
   border-radius: var(--cshell-radius-control, 10px);
   border: 1px solid var(--cshell-border, #d9cbb8);
   background: var(--cshell-surface, #fff9f0);
   color: var(--cshell-text, #2c241c);
   cursor: pointer;
+  font-size: var(--cshell-type-body, 0.9375rem);
+  line-height: 1.25;
 }
 
-@media (max-width: 1023px) {
-  .cshell-select__trigger {
-    min-height: 44px;
-  }
-}
 </style>
 
 <style>
@@ -183,7 +197,7 @@ body.cshell-user-portals .cshell-select__list,
   position: fixed;
   /* Above dialog root (1400) so nested menus remain clickable */
   z-index: 1500;
-  min-width: 12rem;
+  min-width: 0;
   margin: 0;
   padding: 0.35rem;
   list-style: none;
@@ -195,7 +209,10 @@ body.cshell-user-portals .cshell-select__list,
 }
 
 .cshell-select__option {
-  padding: 0.45rem 0.65rem;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--cshell-space-3, 0.75rem);
   border-radius: var(--cshell-radius-badge, 6px);
   cursor: pointer;
 }

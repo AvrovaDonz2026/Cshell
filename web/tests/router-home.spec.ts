@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import * as adminRedirect from '@/lib/adminRedirect'
 import { createAppRouter } from '@/router'
 import { useAuthStore } from '@/stores/auth'
+import { setLocale } from '@/i18n'
 
 function okEnvelope(data: unknown) {
   return {
@@ -38,6 +39,19 @@ describe('router home', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     stubPublicSettings()
+  })
+
+  it('updates locale storage, document language, and retains preference through navigation', async () => {
+    setActivePinia(createPinia())
+    setLocale('zh')
+    expect(document.documentElement.lang).toBe('zh')
+    expect(localStorage.getItem('cshell_locale')).toBe('zh')
+    const router = createAppRouter()
+    await router.push('/')
+    await router.isReady()
+    await router.push('/login')
+    expect(localStorage.getItem('cshell_locale')).toBe('zh')
+    expect(document.documentElement.lang).toBe('zh')
   })
 
   it('serves the public home page to guests at /', async () => {

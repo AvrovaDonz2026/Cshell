@@ -38,6 +38,23 @@ interface NavItem {
   label: string
 }
 
+const showSectionNav = computed(() => ['dashboard', 'usage', 'keys', 'purchase', 'subscriptions'].includes(String(route.name)))
+
+const sectionNavItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
+    { name: 'dashboard', label: t('shell.nav.overview') },
+    { name: 'usage', label: t('shell.nav.usage') },
+    { name: 'keys', label: t('shell.nav.keys') },
+  ]
+  if (settings.paymentEnabled || settings.subscriptionEnabled) {
+    items.push({ name: 'purchase', label: t('shell.nav.purchase') })
+  }
+  if (settings.subscriptionEnabled) {
+    items.push({ name: 'subscriptions', label: t('shell.nav.subscriptions') })
+  }
+  return items
+})
+
 const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => {
   const workspace: NavItem[] = [
     { name: 'dashboard', label: t('shell.nav.overview') },
@@ -201,10 +218,22 @@ function onAccountKeydown(event: KeyboardEvent): void {
   }
 }
 
+function isWithinOwnedPortal(target: Node): boolean {
+  const account = accountRef.value
+  if (!account) return false
+  const ownedSelectIds = new Set(
+    Array.from(account.querySelectorAll<HTMLElement>('[data-select-owner]'))
+      .map((element) => element.dataset.selectOwner)
+      .filter((id): id is string => Boolean(id)),
+  )
+  const list = target instanceof Element ? target.closest<HTMLElement>('.cshell-select__list[data-select-owner]') : null
+  return Boolean(list?.dataset.selectOwner && ownedSelectIds.has(list.dataset.selectOwner))
+}
+
 function onDocumentPointerDown(event: MouseEvent): void {
   if (!accountOpen.value) return
   const target = event.target as Node
-  if (accountRef.value?.contains(target)) return
+  if (accountRef.value?.contains(target) || isWithinOwnedPortal(target)) return
   closeAccount(false)
 }
 
@@ -437,6 +466,19 @@ onBeforeUnmount(() => {
 
       <main ref="mainRef" class="shell-content">
         <div class="shell-container">
+          <nav v-if="showSectionNav" class="section-nav" :aria-label="t('shell.sectionNav.label')">
+            <div class="section-nav__list">
+              <RouterLink
+                v-for="item in sectionNavItems"
+                :key="item.name"
+                class="section-nav__link"
+                :to="{ name: item.name }"
+                :aria-current="route.name === item.name ? 'page' : undefined"
+              >
+                {{ item.label }}
+              </RouterLink>
+            </div>
+          </nav>
           <RouterView />
         </div>
       </main>
@@ -858,7 +900,8 @@ onBeforeUnmount(() => {
   z-index: 40;
   display: grid;
   gap: 0.15rem;
-  min-width: 14rem;
+  width: min(16rem, calc(100vw - 2rem));
+  min-width: 0;
   padding: 0.4rem;
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
@@ -867,7 +910,7 @@ onBeforeUnmount(() => {
 }
 
 .account-menu__head {
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--cshell-border);
   margin-bottom: 0.2rem;
   min-width: 0;
@@ -887,21 +930,35 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
-.account-menu__item {
-  display: block;
+.account-menu__item,
+.account-menu__prefs :deep(.theme-toggle__button),
+.account-menu__prefs :deep(.cshell-select__trigger) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
-  padding: 0.55rem 0.6rem;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.55rem 0.75rem;
   border: 0;
   border-radius: var(--cshell-radius-badge);
   background: transparent;
-  color: inherit;
+  color: var(--cshell-text);
+  font-family: inherit;
   font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.4;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
 
-.account-menu__item:hover {
+.account-menu__item:hover,
+.account-menu__item:focus-visible,
+.account-menu__prefs :deep(.theme-toggle__button:hover:not(:disabled)),
+.account-menu__prefs :deep(.theme-toggle__button:focus-visible),
+.account-menu__prefs :deep(.cshell-select__trigger:hover:not(:disabled)),
+.account-menu__prefs :deep(.cshell-select__trigger:focus-visible) {
   background: var(--cshell-accent-soft);
 }
 
@@ -910,12 +967,20 @@ onBeforeUnmount(() => {
 }
 
 .account-menu__prefs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.25rem;
-  padding: 0.5rem 0.6rem 0.2rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.15rem;
+  min-width: 0;
+  margin-top: 0.2rem;
+  padding-top: 0.35rem;
   border-top: 1px solid var(--cshell-border);
+}
+
+.account-menu__prefs :deep(.locale-switcher),
+.account-menu__prefs :deep(.cshell-select) {
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .shell-content {
@@ -927,6 +992,46 @@ onBeforeUnmount(() => {
   max-width: 72rem;
   margin: 0 auto;
   min-width: 0;
+}
+
+.section-nav {
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-bottom: 1px solid var(--cshell-border);
+}
+
+.section-nav__list {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  gap: 0.35rem;
+}
+
+.section-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 2px solid transparent;
+  color: var(--cshell-text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.section-nav__link:hover {
+  color: var(--cshell-text);
+  background: var(--cshell-accent-soft);
+}
+
+.section-nav__link[aria-current='page'] {
+  border-bottom-color: var(--cshell-accent);
+  color: var(--cshell-text);
+  font-weight: 600;
 }
 
 .drawer-overlay {

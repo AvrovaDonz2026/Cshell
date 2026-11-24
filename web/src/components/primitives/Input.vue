@@ -34,17 +34,14 @@ const model = defineModel<string>({ default: '' })
 <style scoped>
 .cshell-input {
   width: 100%;
-  min-height: 2.5rem;
-  padding: 0.5rem 0.75rem;
+  height: var(--cshell-control-height, 44px);
+  padding: 0 var(--cshell-space-3, 0.75rem);
   border-radius: var(--cshell-radius-control, 10px);
   border: 1px solid var(--cshell-border, #d9cbb8);
   background: var(--cshell-surface, #fff9f0);
   color: var(--cshell-text, #2c241c);
+  font-size: var(--cshell-type-body, 0.9375rem);
+  line-height: 1.25;
 }
 
-@media (max-width: 1023px) {
-  .cshell-input {
-    min-height: 44px;
-  }
-}
 </style>

@@ -135,7 +135,7 @@ async function onSubmit(): Promise<void> {
 <template>
   <AuthSplit :title="t('auth.registerTitle')">
     <div class="auth-card">
-      <h2 class="auth-card__title">{{ t('auth.registerTitle') }}</h2>
+      <h1 class="auth-card__title">{{ t('auth.registerTitle') }}</h1>
       <p class="auth-card__caption">{{ t('auth.registerCaption') }}</p>
 
       <template v-if="settings.settingsFailed">
@@ -176,12 +176,13 @@ async function onSubmit(): Promise<void> {
       >
         <label>
           <span>{{ t('auth.email') }}</span>
-          <Input v-model="email" type="email" autocomplete="username" required />
+          <Input v-model="email" class="auth-control" type="email" autocomplete="username" required />
         </label>
         <label>
           <span>{{ t('auth.password') }}</span>
           <Input
             v-model="password"
+            class="auth-control"
             type="password"
             autocomplete="new-password"
             required
@@ -191,6 +192,7 @@ async function onSubmit(): Promise<void> {
           <span>{{ t('auth.confirmPassword') }}</span>
           <Input
             v-model="confirmPassword"
+            class="auth-control"
             type="password"
             autocomplete="new-password"
             required
@@ -203,6 +205,7 @@ async function onSubmit(): Promise<void> {
             <div class="row">
               <Input
                 v-model="verifyCode"
+                class="auth-control"
                 autocomplete="one-time-code"
                 required
               />
@@ -244,13 +247,13 @@ async function onSubmit(): Promise<void> {
 
         <label>
           <span>{{ t('auth.invitationCode') }}</span>
-          <Input v-model="invitationCode" autocomplete="off" />
+          <Input v-model="invitationCode" class="auth-control" autocomplete="off" />
         </label>
 
         <p v-if="error" class="error" role="alert">
           {{ error }}
         </p>
-        <Button type="submit" block :disabled="!canSubmit">
+        <Button class="auth-control" type="submit" block :disabled="!canSubmit">
           {{ pending ? t('auth.registering') : t('auth.submitRegister') }}
         </Button>
       </form>
@@ -268,46 +271,53 @@ async function onSubmit(): Promise<void> {
 <style scoped>
 .auth-card {
   display: grid;
-  gap: 0.85rem;
+  gap: var(--cshell-space-4);
 }
 
 .auth-card__title {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: var(--cshell-type-compact-title);
   letter-spacing: -0.01em;
 }
 
 .auth-card__caption {
   margin: -0.45rem 0 0.1rem;
-  font-size: 0.85rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
 .auth-form {
   display: grid;
-  gap: 0.85rem;
+  gap: var(--cshell-space-4);
 }
 
 .auth-card label {
   display: grid;
-  gap: 0.35rem;
-  font-size: 0.9rem;
+  gap: var(--cshell-space-2);
+  font-size: var(--cshell-type-body);
 }
 
 .row {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: var(--cshell-space-2);
   align-items: stretch;
 }
 
 .captcha-block {
   display: grid;
-  gap: 0.35rem;
-  font-size: 0.9rem;
+  gap: var(--cshell-space-2);
+  font-size: var(--cshell-type-body);
 }
 
 .row :deep(.cshell-input) {
-  flex: 1;
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.row :deep(.cshell-btn) {
+  min-height: 44px;
+  flex: 0 1 auto;
 }
 
 .disabled-msg {

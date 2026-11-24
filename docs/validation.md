@@ -151,3 +151,55 @@ Behavior and safety boundaries:
 - Pending checkout survives refresh using per-tab session storage containing **only owner user id + numeric order id**. Authenticated order detail restores status/amount/expiry; cancellation and new-order controls remain available. No password, resume token, QR, payment URL or provider/client secret is persisted. Provider launch details are intentionally unavailable after refresh; recovery is status/cancel, not fabricated provider resumption.
 
 Preview remains healthy at `http://127.0.0.1:4284/` in static mode with fixture on `127.0.0.1:41949`; historical ports are untouched. Production runner ephemeral services were cleaned up. No real email, Cloudflare verification, upstream registration, provider transaction, OAuth/JSAPI ceremony, database, credentials or real pinned-upstream deployment was exercised. These are source-derived contracts plus deterministic local verification, not live-provider acceptance. No commit, plan, push or release-script change was made.
+
+
+## Portal theme, locale and menu regression closure — 2026-11-24
+
+The approved portal/theme and locale follow-up is verified against the independent static preview (local mock only).
+
+- Full browser acceptance: **157/157 checks passed**, **68 screenshots**, zero failures, runtime errors, unexpected console errors, failed requests, or HTTP failures. Source digest matched start/end: `ae0465d98458cb1981fbaef1f11e4428a436f793bd08f3dd3ff7e71cf4d4226e`. Four intentionally expected HTTP responses were recorded by the unchanged exact failure-suppression rules.
+- Coverage now clicks public home theme and locale controls, checks teleported Select colors, translated labels, storage and reload preference; checks locale option mousedown/click within the account menu, two-stage Escape/focus restore, and route preference persistence. Public auth routes and workspace route/theme matrix remain included.
+- Account-menu preference controls were aligned after a visual follow-up: theme and locale controls now share full width, height, radius, surface, border and hover treatment. The strict browser check compares their computed geometry and palette in the full matrix; final rerun remains **157/157 passed**.
+- Frontend gates: **17 files / 112 tests passed**, with `lint:check`, `typecheck`, and `build` passing. The pre-existing test-local missing translation warnings remain non-fatal.
+- Preview restarted in owned static mode at `http://127.0.0.1:4284/`. Evidence and screenshots are in `artifacts/cshell-web/acceptance/results.json` and `artifacts/cshell-web/acceptance/`.
+
+No commit or push was made. The plan was not edited.
+
+
+## Unified account dropdown rows — 2026-11-24
+
+Account-only styling now gives Profile, Back to home, Log out, theme and locale identical left-aligned, 400-weight, 44px-minimum rows with matching width, horizontal padding and radius. Idle rows are transparent and borderless; hover and focus-visible use the existing warm accent-soft color. The secondary email stays smaller and muted; the menu width is bounded to the viewport. Homepage/sidebar controls, theme accessible name, available locale choices, portal ownership and two-stage Escape behavior are unchanged.
+
+Validation for this narrow follow-up:
+
+- Frontend `lint:check`, `typecheck`, all **17 files / 112 tests**, and ordinary production `build` passed. Existing test-local missing translation warnings remain non-fatal. Fixture **5/5** and Rust **10/10** tests passed; `git diff --check` and browser runner syntax passed.
+- Actual Rust production-browser runner: **4/4 checks**, **3 screenshots**, zero errors.
+- Final full strict static-preview matrix finished at `2026-11-24T06:03:30.669Z`: **155/157 checks passed**, **69 screenshots**. **All 12 account-menu viewport/theme combinations passed**, including every row's left alignment, normal font weight, matching height/width/left edge/padding/radius, transparent idle surface, border absence, warm text/panel palette, hover/focus-visible colors, theme toggling, locale selection, portal ownership and Escape hierarchy. Public home controls also passed.
+- **The full matrix is not green:** two purchase/billing checks failed after Chrome reported `net::ERR_NETWORK_CHANGED` while loading local purchase assets. Final report records **2 runtime errors, 15 console errors, 13 failed requests, 0 HTTP failures**. Earlier attempts also encountered Chrome network suspension/change errors and are not counted as acceptance. No network/runtime/error gate was weakened or suppressed. No adjacent purchase changes were made.
+- Source SHA-256 matched start/end: `f41b8a4addff91c8b964b9285210cd692748bbf3c92bb2e21af8425cd4ea09a0`. Final evidence: `artifacts/cshell-web/acceptance/results.json`. Account screenshots: `artifacts/cshell-web/acceptance/account-menu-light.png` and `account-menu-dark.png`.
+
+Owned preview was stopped/restarted with `CSHELL_WEB_STATIC=1`, rebuilt, and left healthy at `http://127.0.0.1:4284/` (local mock fixture only). Earlier uncommitted work was preserved. No commit, push, plan edits, added translations or backend changes were made. The remaining verification limitation is a clean full-browser run in an environment without Chrome network-change interruptions; local mock checks do not establish real upstream/provider behavior.
+
+## Full frontend typography/layout alignment — 2026-11-24
+
+Shared semantic typography, spacing and control-height tokens now drive portal/auth/workspace layouts while retaining the warm palette and page-width variants. Workspace table numerics use tabular figures/right alignment; identifiers selectively wrap. Auth fields/primary actions use an explicit spacious desktop variant and preserve mobile touch targets. Dialog bodies scroll inside bounded visual-viewport panels; Select popups flip/clamp and reposition on scroll/resize. These are scoped Cshell UI changes; no admin views or business API behavior changed.
+
+Final verification after release-license bundling:
+- `pnpm --dir web build`, `lint:check`, `typecheck`, and `test:run`: passed (**17 files / 112 tests**).
+- Release inventories regenerated: **60 npm packages / 31 notice texts**, **133 Rust packages / 108 notice texts**, zero unresolved; production package gate passed (**82 files**).
+- Full strict browser matrix: **157/157 passed**, **70 screenshots**, zero failures, runtime/console/request/HTTP errors, with matching source digests. Covers English/Chinese, light/dark, desktop/tablet/mobile plus 320px, short landscape and breakpoints, geometry/alignment, dialogs, and viewport-contained menus.
+- `git diff --check`: passed. Preview remains healthy at `http://127.0.0.1:4284/` (static local mock only).
+
+Earlier intermediate browser/build attempts had failures during implementation, including a transient CSS brace syntax error and Chrome network-change noise; these were corrected. The final complete build and strict matrix above supersede those intermediate runs. No real provider/payment transaction is implied.
+
+## Warm AI workspace section layout — 2026-11-24
+
+Added one shared horizontal secondary navigation for Dashboard, Usage, API Keys, Purchase and Subscriptions, gated by the existing public settings. The vertical workspace sidebar and URLs remain unchanged; Orders and Profile remain in their existing account entry points. Dashboard and Usage now share the same presentational `HeatmapGrid`, while data loading, applied date filters, timezone and aggregation remain owned by their respective views. Keys, Purchase and Subscriptions retain their existing API/payment validation and use the same centered panel/content rail.
+
+Final verification:
+- Frontend `lint:check`, `typecheck`, `test:run` (**18 files / 114 tests**) and production build passed.
+- Full strict static browser matrix: **169/169 checks passed**, **70 screenshots**, zero failures/runtime/console/request/HTTP errors; source digest matched start/end.
+- Matrix includes section navigation active state/settings gate and viewport containment, existing business flows, language/theme variants and mobile widths.
+- `git diff --check` passed. Preview rebuilt and healthy at `http://127.0.0.1:4284/` using explicit local fixture only.
+
+Real Sub2API/payment-provider execution remains outside this UI/mock acceptance. No commit or push was made.

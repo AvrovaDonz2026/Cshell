@@ -6,13 +6,13 @@ import type { TrendResponse, UsageLog } from '@/api/types'
 import { ApiError } from '@/api/types'
 import Button from '@/components/primitives/Button.vue'
 import Input from '@/components/primitives/Input.vue'
+import HeatmapGrid from '@/components/user/HeatmapGrid.vue'
 import {
   buildHeatmapDays,
   buildHeatmapHours,
   buildHeatmapMonths,
   buildYearMonthLabels,
   defaultRangeForScale,
-  heatmapLevel,
   type HeatmapMetric,
   type HeatmapScale,
   weekCountForDays,
@@ -290,22 +290,6 @@ const maxValue = computed(() => {
   return Math.max(0, ...values, 0)
 })
 
-function hourLabel(cell: (typeof hourCells.value)[number]): string {
-  const base = `${String(cell.hour).padStart(2, '0')}:00`
-  if (!cell.point) return `${base}; ${t('usage.missing')}`
-  return `${base}; ${cell.value} ${metric.value}; ${cell.point.requests} requests;`
-}
-
-function dayLabel(cell: (typeof dayCells.value)[number]): string {
-  if (!cell.inRange) return `${cell.date}; ${t('usage.outside')}`
-  if (!cell.point) return `${cell.date}; ${t('usage.missing')}`
-  return `${cell.date}; ${cell.value} ${metric.value}; ${cell.point.requests} requests;`
-}
-
-function monthLabel(cell: (typeof monthCells.value)[number]): string {
-  if (!cell.point) return `${cell.key}; ${t('usage.missing')}`
-  return `${cell.key}; ${cell.value} ${metric.value}; ${cell.point.requests} requests;`
-}
 
 onMounted(() => {
   resetToScaleDefault(scale.value)
@@ -397,106 +381,18 @@ onMounted(() => {
       </p>
 
       <template v-else>
-        <!-- Hour: 24 cells -->
-        <div v-if="scale === 'hour'" class="hour-grid" role="grid">
-          <button
-            v-for="cell in hourCells"
-            :key="cell.hour"
-            type="button"
-            role="gridcell"
-            class="cell"
-            :class="[
-              `cell--l${heatmapLevel(cell.value, maxValue)}`,
-              { 'cell--missing': !cell.point },
-            ]"
-            :aria-label="hourLabel(cell)"
-            :title="hourLabel(cell)"
-          >
-            {{ String(cell.hour).padStart(2, '0') }}
-          </button>
-        </div>
-
-        <!-- Multi-year monthly -->
-        <div v-else-if="scale === 'multi-year'" class="month-grid" role="grid">
-          <button
-            v-for="cell in monthCells"
-            :key="cell.key"
-            type="button"
-            role="gridcell"
-            class="cell cell--month"
-            :class="[
-              `cell--l${heatmapLevel(cell.value, maxValue)}`,
-              { 'cell--missing': !cell.point },
-            ]"
-            :aria-label="monthLabel(cell)"
-            :title="monthLabel(cell)"
-          >
-            {{ cell.key }}
-          </button>
-        </div>
-
-        <!-- Month / year day calendar -->
-        <div v-else class="day-wrap">
-          <div
-            v-if="scale === 'year'"
-            class="heatmap-month-labels"
-            :style="{ gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))` }"
-            aria-hidden="true"
-          >
-            <span
-              v-for="label in monthLabels"
-              :key="label.key"
-              class="month-label"
-              :style="{
-                gridColumn: `${label.column + 1} / span ${label.span}`,
-                gridRow: 1,
-              }"
-            >
-              {{ label.label }}
-            </span>
-          </div>
-
-          <div class="day-layout">
-            <div class="weekdays" aria-hidden="true">
-              <span v-for="(label, idx) in weekdayLabels" :key="idx">
-                {{ label }}
-              </span>
-            </div>
-            <div
-              class="day-grid"
-              role="grid"
-              :style="{ gridTemplateColumns: `repeat(${weekCount}, minmax(0, 1fr))` }"
-            >
-              <button
-                v-for="cell in dayCells"
-                :key="cell.date + String(cell.inRange)"
-                type="button"
-                role="gridcell"
-                class="cell"
-                :class="[
-                  `cell--l${heatmapLevel(cell.value, maxValue)}`,
-                  {
-                    'cell--outside': !cell.inRange,
-                    'cell--missing': cell.inRange && !cell.point,
-                  },
-                ]"
-                :aria-label="dayLabel(cell)"
-                :title="dayLabel(cell)"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div class="legend" aria-hidden="true">
-          <span>{{ t('usage.less') }}</span>
-          <span
-            v-for="level in 5"
-            :key="level"
-            class="legend__swatch"
-            :class="`cell--l${level - 1}`"
-          />
-          <span>{{ t('usage.more') }}</span>
-        </div>
+        <HeatmapGrid
+          :scale="scale"
+          :hour-cells="hourCells"
+          :day-cells="dayCells"
+          :month-cells="monthCells"
+          :week-count="weekCount"
+          :month-labels="monthLabels"
+          :weekday-labels="weekdayLabels"
+          :max-value="maxValue"
+          :metric="metric"
+          :translate="t"
+        />
       </template>
     </section>
 
@@ -602,7 +498,7 @@ onMounted(() => {
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
   min-width: 0;
 }
 
@@ -613,13 +509,13 @@ onMounted(() => {
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
 }
 
@@ -647,7 +543,7 @@ onMounted(() => {
 
 .toolbar__meta {
   margin: 0 0 0.6rem auto;
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
   overflow-wrap: anywhere;
 }
@@ -703,7 +599,7 @@ onMounted(() => {
 .panel {
   display: grid;
   gap: 1rem;
-  padding: 1.3rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
@@ -718,12 +614,12 @@ onMounted(() => {
 
 .panel__title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: var(--cshell-type-section);
 }
 
 .panel__caption {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
@@ -751,114 +647,17 @@ onMounted(() => {
   overflow-wrap: anywhere;
 }
 
+.table td:not(:first-child),
+.table th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .table th {
   color: var(--cshell-text-muted);
   font-weight: 600;
   font-size: 0.8rem;
-}
-
-.hour-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(2.25rem, 1fr));
-  gap: 0.35rem;
-  max-width: 36rem;
-}
-
-.month-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
-  gap: 0.4rem;
-}
-
-.heatmap-month-labels {
-  display: grid;
-  gap: 0.25rem;
-  margin: 0 0 0.35rem 2rem;
-  font-size: 0.7rem;
-  color: var(--cshell-text-muted);
-}
-
-.month-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.day-layout {
-  display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr);
-  gap: 0.35rem;
-  min-width: 24rem;
-}
-
-.weekdays {
-  display: grid;
-  grid-template-rows: repeat(7, minmax(0, 1fr));
-  gap: 0.25rem;
-  font-size: 0.65rem;
-  color: var(--cshell-text-muted);
-  align-items: center;
-}
-
-.day-grid {
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(7, minmax(0, 1fr));
-  gap: 0.25rem;
-}
-
-.cell {
-  aspect-ratio: 1;
-  min-width: 0;
-  min-height: 1rem;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  padding: 0;
-  font-size: 0.65rem;
-  cursor: default;
-  color: var(--cshell-text);
-}
-
-.cell--month {
-  aspect-ratio: auto;
-  min-height: 2.5rem;
-  padding: 0.35rem;
-}
-
-.cell--l0 { background: var(--cshell-heat-0); }
-.cell--l1 { background: var(--cshell-heat-1); }
-.cell--l2 { background: var(--cshell-heat-2); }
-.cell--l3 { background: var(--cshell-heat-3); color: var(--cshell-heat-3-ink); }
-.cell--l4 { background: var(--cshell-heat-4); color: var(--cshell-heat-4-ink); }
-
-.cell--outside {
-  opacity: 0.28;
-}
-
-.cell--missing {
-  background: repeating-linear-gradient(
-    135deg,
-    transparent,
-    transparent 3px,
-    #ac95743b 3px,
-    #ac95743b 5px
-  );
-}
-
-.legend {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.25rem;
-  font-size: 0.7rem;
-  color: var(--cshell-text-muted);
-}
-
-.legend__swatch {
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 1px solid var(--cshell-border);
-  border-radius: 2px;
 }
 
 .pager {
@@ -884,7 +683,7 @@ onMounted(() => {
   }
 
   .panel {
-    padding: 1rem;
+    padding: var(--cshell-panel-padding-mobile);
   }
 }
 

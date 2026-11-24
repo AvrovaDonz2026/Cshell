@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -11,20 +11,13 @@ const theme = useThemeStore()
 const route = useRoute()
 
 function syncPortalClass(): void {
-  const publicOrGuest =
-    route.name === 'home' ||
-    route.name === 'login' ||
-    route.name === 'register' ||
-    route.name === 'email-verify' ||
-    route.name === 'payment-result' ||
-    route.meta.public === true ||
-    route.meta.guest === true
-  document.body.classList.toggle(
-    'cshell-user-portals',
-    !publicOrGuest && auth.isAuthenticated,
-  )
+  if (typeof document === 'undefined') return
+  const isAdmin = auth.isAuthenticated && auth.isAdmin
+  document.body.classList.toggle('cshell-user-portals', !isAdmin)
   document.body.dataset.theme = theme.mode
 }
+
+syncPortalClass()
 
 onMounted(() => {
   if (!auth.hydrated) auth.hydrate()
@@ -33,7 +26,12 @@ onMounted(() => {
   syncPortalClass()
 })
 
-watch([() => route.name, () => auth.isAuthenticated, () => theme.mode], syncPortalClass)
+watch([() => route.name, () => auth.isAuthenticated, () => auth.isAdmin, () => theme.mode], syncPortalClass)
+
+onBeforeUnmount(() => {
+  document.body.classList.remove('cshell-user-portals')
+  delete document.body.dataset.theme
+})
 </script>
 
 <template>

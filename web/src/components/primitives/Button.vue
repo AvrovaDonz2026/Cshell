@@ -3,12 +3,14 @@ withDefaults(
   defineProps<{
     type?: 'button' | 'submit' | 'reset'
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+    size?: 'default' | 'auth'
     disabled?: boolean
     block?: boolean
   }>(),
   {
     type: 'button',
     variant: 'primary',
+    size: 'default',
     disabled: false,
     block: false,
   },
@@ -18,7 +20,7 @@ withDefaults(
 <template>
   <button
     class="cshell-btn"
-    :class="[`cshell-btn--${variant}`, { 'cshell-btn--block': block }]"
+    :class="[`cshell-btn--${variant}`, `cshell-btn--${size}`, { 'cshell-btn--block': block }]"
     :type="type"
     :disabled="disabled"
   >
@@ -32,20 +34,20 @@ withDefaults(
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.5rem;
-  padding: 0.45rem 1rem;
+  height: var(--cshell-control-height, 44px);
+  padding: 0 var(--cshell-space-4, 1rem);
   border-radius: var(--cshell-radius-control, 10px);
   border: 1px solid transparent;
   cursor: pointer;
+  font-size: var(--cshell-type-body, 0.9375rem);
+  line-height: 1.25;
   font-weight: 600;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-/* Touch targets stay at least 44px on small screens. */
-@media (max-width: 1023px) {
-  .cshell-btn {
-    min-height: 44px;
-  }
+
+.cshell-btn--auth {
+  height: var(--cshell-control-height-auth, 56px);
 }
 
 .cshell-btn:disabled {

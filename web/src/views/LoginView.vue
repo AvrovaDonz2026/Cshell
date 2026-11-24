@@ -65,7 +65,7 @@ async function onSubmit(): Promise<void> {
 <template>
   <AuthSplit :title="t('auth.loginTitle')">
     <form class="auth-form" @submit.prevent="onSubmit">
-      <h2 class="auth-form__title">{{ t('auth.loginTitle') }}</h2>
+      <h1 class="auth-form__title">{{ t('auth.loginTitle') }}</h1>
       <p class="auth-form__caption">{{ t('auth.loginCaption') }}</p>
 
       <p
@@ -87,11 +87,11 @@ async function onSubmit(): Promise<void> {
       </p>
       <label>
         <span>{{ t('auth.email') }}</span>
-        <Input v-model="email" type="email" autocomplete="username" required />
+        <Input v-model="email" class="auth-control" type="email" autocomplete="username" required />
       </label>
       <label>
         <span>{{ t('auth.password') }}</span>
-        <Input v-model="password" type="password" autocomplete="current-password" required />
+        <Input v-model="password" class="auth-control" type="password" autocomplete="current-password" required />
       </label>
       <CaptchaField
         v-if="settings.captchaRequired && settings.captchaProvider"
@@ -101,7 +101,7 @@ async function onSubmit(): Promise<void> {
       <p v-if="error" class="error" role="alert">
         {{ error }}
       </p>
-      <Button type="submit" block :disabled="pending || !settings.settingsReady || (settings.captchaRequired && !captchaToken)">
+      <Button class="auth-control" type="submit" block :disabled="pending || !settings.settingsReady || (settings.captchaRequired && !captchaToken)">
         {{ pending ? t('auth.loggingIn') : t('auth.submitLogin') }}
       </Button>
       <RouterLink
@@ -121,31 +121,31 @@ async function onSubmit(): Promise<void> {
 <style scoped>
 .auth-form {
   display: grid;
-  gap: 0.85rem;
+  gap: var(--cshell-space-4);
 }
 
 .auth-form__title {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: var(--cshell-type-compact-title);
   letter-spacing: -0.01em;
 }
 
 .auth-form__caption {
   margin: -0.45rem 0 0.1rem;
-  font-size: 0.85rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
 .auth-form label {
   display: grid;
-  gap: 0.35rem;
-  font-size: 0.9rem;
+  gap: var(--cshell-space-2);
+  font-size: var(--cshell-type-body);
 }
 
 .notice {
   margin: 0;
   color: var(--cshell-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--cshell-type-body);
 }
 
 .inline-retry {

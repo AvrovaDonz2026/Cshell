@@ -183,7 +183,7 @@ onMounted(() => {
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
   min-width: 0;
 }
 
@@ -194,13 +194,13 @@ onMounted(() => {
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
 }
 
@@ -219,7 +219,7 @@ onMounted(() => {
 .panel {
   display: grid;
   gap: 0.85rem;
-  padding: 1.25rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
@@ -233,12 +233,12 @@ onMounted(() => {
 
 .panel__title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: var(--cshell-type-section);
 }
 
 .panel__caption {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
@@ -260,7 +260,7 @@ onMounted(() => {
 .rail {
   display: grid;
   gap: 0.85rem;
-  padding: 1.25rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-bg-elevated);

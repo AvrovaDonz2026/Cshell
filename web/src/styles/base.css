@@ -13,6 +13,8 @@ body,
 body {
   margin: 0;
   font-family: var(--cshell-font-sans, system-ui, sans-serif);
+  font-size: var(--cshell-type-body, 0.9375rem);
+  line-height: var(--cshell-leading-body, 1.5);
   background: #ececec;
   color: #222;
 }
@@ -41,4 +43,45 @@ body.cshell-user-portals {
 body.cshell-user-portals :focus-visible {
   outline: 2px solid var(--cshell-focus);
   outline-offset: 2px;
+}
+
+/* Semantic rhythm helpers shared by all Cshell-owned public and workspace views. */
+.cshell-user-workspace,
+.cshell-public {
+  font-size: var(--cshell-type-body);
+  line-height: var(--cshell-leading-body);
+}
+
+.cshell-user-workspace :is(h1, .page-title),
+.cshell-public :is(.page-title) {
+  font-size: var(--cshell-type-page);
+  line-height: var(--cshell-leading-page);
+  font-weight: var(--cshell-weight-semibold);
+  letter-spacing: -0.025em;
+}
+
+.cshell-user-workspace :is(h2, .section-title),
+.cshell-public .section-title {
+  font-size: var(--cshell-type-section);
+  line-height: var(--cshell-leading-section);
+  font-weight: var(--cshell-weight-semibold);
+}
+
+.cshell-user-workspace :is(.caption, .meta, .field-hint),
+.cshell-public :is(.caption, .meta, .field-hint) {
+  font-size: var(--cshell-type-caption);
+  line-height: var(--cshell-leading-caption);
+  color: var(--cshell-text-muted);
+}
+
+.cshell-user-workspace :is(.tabular, .numeric),
+.cshell-public :is(.tabular, .numeric) {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 639px) {
+  .cshell-user-workspace {
+    --cshell-panel-padding: var(--cshell-panel-padding-mobile);
+    --cshell-page-gap: 1.25rem;
+  }
 }

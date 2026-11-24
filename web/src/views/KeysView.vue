@@ -393,114 +393,113 @@ onBeforeUnmount(() => {
       </Button>
     </header>
 
-    <div class="toolbar">
-      <label class="field">
-        <span class="field__label">{{ t('keys.filter') }}</span>
-        <Select
-          v-model="statusFilter"
-          :options="statusFilterOptions"
-        />
-      </label>
-      <p class="toolbar__meta">
-        {{ t('keys.page', { page, pages }) }}
-      </p>
-    </div>
-
-    <p v-if="loading" role="status" class="state">
-      {{ t('common.loading') }}
-    </p>
-    <p v-else-if="error && !createOpen && !editOpen" class="error" role="alert">
-      {{ error }}
-    </p>
-    <p v-else-if="!keys.length" role="status" class="state">
-      {{ t('keys.empty') }}
-    </p>
-
-    <section v-else class="list-panel" :aria-label="t('pages.keys')">
-      <ul class="key-list">
-        <li v-for="item in keys" :key="item.id" class="key-row">
-          <div class="key-row__identity">
-            <h2 class="key-row__name">
-              {{ item.name }}
-            </h2>
-            <p class="meta">
-              {{ t('keys.status') }}: {{ item.status || '—' }}
-            </p>
-          </div>
-
-          <dl class="key-row__meta">
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.group') }}</dt>
-              <dd class="meta-cell__value">
-                {{ item.group?.name || item.group_id || '—' }}
-              </dd>
-            </div>
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.quotaUsed') }}</dt>
-              <dd class="meta-cell__value">{{ quotaText(item) }}</dd>
-            </div>
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.ipCountLabel') }}</dt>
-              <dd class="meta-cell__value">
-                {{ ipListLength(item.ip_whitelist) }} / {{ ipListLength(item.ip_blacklist) }}
-              </dd>
-            </div>
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.expires') }}</dt>
-              <dd class="meta-cell__value">{{ item.expires_at || '—' }}</dd>
-            </div>
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.created') }}</dt>
-              <dd class="meta-cell__value">{{ item.created_at || '—' }}</dd>
-            </div>
-            <div class="meta-cell">
-              <dt class="meta-cell__label">{{ t('keys.lastUsed') }}</dt>
-              <dd class="meta-cell__value">{{ item.last_used_at || '—' }}</dd>
-            </div>
-          </dl>
-
-          <p class="key-row__a11y">
-            {{
-              t('keys.ipCount', {
-                allow: ipListLength(item.ip_whitelist),
-                deny: ipListLength(item.ip_blacklist),
-              })
-            }}. {{ t('keys.quotaUsed') }}: {{ quotaText(item) }}
-          </p>
-
-          <div class="key-row__actions">
-            <Button variant="secondary" @click="openEdit(item)">
-              {{ t('keys.edit') }}
-            </Button>
-            <Button
-              variant="danger"
-              :disabled="deleting"
-              @click="deleteTarget = item"
-            >
-              {{ t('common.delete') }}
-            </Button>
-          </div>
-        </li>
-      </ul>
-
-      <div class="pager">
-        <Button
-          variant="secondary"
-          :disabled="page <= 1 || loading"
-          @click="load(page - 1)"
-        >
-          {{ t('common.prev') }}
-        </Button>
-        <span class="pager__status">
+    <section class="content-panel" :aria-label="t('pages.keys')">
+      <div class="toolbar">
+        <label class="field">
+          <span class="field__label">{{ t('keys.filter') }}</span>
+          <Select v-model="statusFilter" :options="statusFilterOptions" />
+        </label>
+        <p class="toolbar__meta">
           {{ t('keys.page', { page, pages }) }}
-        </span>
-        <Button
-          variant="secondary"
-          :disabled="page >= pages || loading"
-          @click="load(page + 1)"
-        >
-          {{ t('common.next') }}
-        </Button>
+        </p>
+      </div>
+
+      <p v-if="loading" role="status" class="state">
+        {{ t('common.loading') }}
+      </p>
+      <p v-else-if="error && !createOpen && !editOpen" class="error" role="alert">
+        {{ error }}
+      </p>
+      <p v-else-if="!keys.length" role="status" class="state">
+        {{ t('keys.empty') }}
+      </p>
+
+      <div v-else class="list-panel">
+        <ul class="key-list">
+          <li v-for="item in keys" :key="item.id" class="key-row">
+            <div class="key-row__identity">
+              <h2 class="key-row__name">
+                {{ item.name }}
+              </h2>
+              <p class="meta">
+                {{ t('keys.status') }}: {{ item.status || '—' }}
+              </p>
+            </div>
+
+            <dl class="key-row__meta">
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.group') }}</dt>
+                <dd class="meta-cell__value">
+                  {{ item.group?.name || item.group_id || '—' }}
+                </dd>
+              </div>
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.quotaUsed') }}</dt>
+                <dd class="meta-cell__value">{{ quotaText(item) }}</dd>
+              </div>
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.ipCountLabel') }}</dt>
+                <dd class="meta-cell__value">
+                  {{ ipListLength(item.ip_whitelist) }} / {{ ipListLength(item.ip_blacklist) }}
+                </dd>
+              </div>
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.expires') }}</dt>
+                <dd class="meta-cell__value">{{ item.expires_at || '—' }}</dd>
+              </div>
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.created') }}</dt>
+                <dd class="meta-cell__value">{{ item.created_at || '—' }}</dd>
+              </div>
+              <div class="meta-cell">
+                <dt class="meta-cell__label">{{ t('keys.lastUsed') }}</dt>
+                <dd class="meta-cell__value">{{ item.last_used_at || '—' }}</dd>
+              </div>
+            </dl>
+
+            <p class="key-row__a11y">
+              {{
+                t('keys.ipCount', {
+                  allow: ipListLength(item.ip_whitelist),
+                  deny: ipListLength(item.ip_blacklist),
+                })
+              }}. {{ t('keys.quotaUsed') }}: {{ quotaText(item) }}
+            </p>
+
+            <div class="key-row__actions">
+              <Button variant="secondary" @click="openEdit(item)">
+                {{ t('keys.edit') }}
+              </Button>
+              <Button
+                variant="danger"
+                :disabled="deleting"
+                @click="deleteTarget = item"
+              >
+                {{ t('common.delete') }}
+              </Button>
+            </div>
+          </li>
+        </ul>
+
+        <div class="pager">
+          <Button
+            variant="secondary"
+            :disabled="page <= 1 || loading"
+            @click="load(page - 1)"
+          >
+            {{ t('common.prev') }}
+          </Button>
+          <span class="pager__status">
+            {{ t('keys.page', { page, pages }) }}
+          </span>
+          <Button
+            variant="secondary"
+            :disabled="page >= pages || loading"
+            @click="load(page + 1)"
+          >
+            {{ t('common.next') }}
+          </Button>
+        </div>
       </div>
     </section>
 
@@ -663,10 +662,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
+  width: min(100%, var(--cshell-content-width));
   min-width: 0;
-    max-width: 100%;
-  overflow-x: hidden;
+  margin-inline: auto;
 }
 
 .page__head {
@@ -684,14 +683,24 @@ onBeforeUnmount(() => {
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
+}
+
+.content-panel {
+  display: grid;
+  gap: 1rem;
+  padding: var(--cshell-panel-padding);
+  border: 1px solid var(--cshell-border);
+  border-radius: var(--cshell-radius-panel);
+  background: var(--cshell-surface);
+  min-width: 0;
 }
 
 .toolbar {
@@ -701,7 +710,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.85rem 1rem;
-  border-radius: var(--cshell-radius-panel);
+  border-radius: var(--cshell-radius-control);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-bg-elevated);
 }
@@ -718,7 +727,7 @@ onBeforeUnmount(() => {
 }
 
 .toolbar__meta {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.15rem;
   font-size: 0.84rem;
   color: var(--cshell-text-muted);
 }
@@ -737,8 +746,7 @@ onBeforeUnmount(() => {
   gap: 0;
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
-  background: var(--cshell-surface);
-  overflow: hidden;
+  background: var(--cshell-bg-elevated);
 }
 
 .key-row {
@@ -746,7 +754,7 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(11rem, 1fr) minmax(0, 2.6fr) auto;
   align-items: start;
   gap: 1rem;
-  padding: 1rem 1.15rem;
+  padding: var(--cshell-space-4) var(--cshell-panel-padding);
   border-bottom: 1px solid var(--cshell-border);
   min-width: 0;
 }
@@ -878,6 +886,12 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--cshell-danger);
   font-size: 0.8rem;
+}
+
+@media (max-width: 760px) {
+  .content-panel {
+    padding: var(--cshell-panel-padding-mobile);
+  }
 }
 
 @media (max-width: 900px) {

@@ -1,15 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { setLocale } from '@/i18n'
+import { availableLocales, setLocale } from '@/i18n'
 import Select from './primitives/Select.vue'
 
 const { t, locale } = useI18n()
 
-const options = computed(() => [
-  { value: 'en', label: t('shell.locale.en') },
-  { value: 'zh', label: t('shell.locale.zh') },
-])
+const localeLabels: Record<(typeof availableLocales)[number], string> = {
+  en: 'shell.locale.en',
+  zh: 'shell.locale.zh',
+}
+
+const options = computed(() =>
+  availableLocales.map((value) => ({
+    value,
+    label: t(localeLabels[value]),
+  })),
+)
 
 const model = computed({
   get: () => locale.value,
@@ -22,14 +29,15 @@ const model = computed({
 <template>
   <label class="locale-switcher">
     <span class="visually-hidden">{{ t('shell.locale.label') }}</span>
-    <Select v-model="model" :options="options" />
+    <Select v-model="model" class="locale-switcher__select" :options="options" />
   </label>
 </template>
 
 <style scoped>
 .locale-switcher {
-  display: inline-block;
-  min-width: 7.5rem;
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .visually-hidden {

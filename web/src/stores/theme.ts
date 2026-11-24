@@ -23,11 +23,14 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   function setMode(next: ThemeMode): void {
+    if (next !== 'light' && next !== 'dark') return
     mode.value = next
+    applyDom()
+    if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, next)
   }
 
   function toggle(): void {
-    mode.value = mode.value === 'dark' ? 'light' : 'dark'
+    setMode(mode.value === 'dark' ? 'light' : 'dark')
   }
 
   watch(

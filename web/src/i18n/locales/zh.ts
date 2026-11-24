@@ -3,6 +3,9 @@ export default {
     name: 'Cshell',
   },
   shell: {
+    sectionNav: {
+      label: '工作区分区',
+    },
     nav: {
       label: '主导航',
       overview: '概览',

@@ -180,24 +180,44 @@ body.cshell-user-portals .cshell-dialog-root,
   z-index: 1;
   width: min(100%, 28rem);
   max-height: min(90vh, 40rem);
-  overflow: auto;
+  max-height: min(90dvh, 40rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: var(--cshell-radius-window, 20px);
   background: var(--cshell-surface, #fff9f0);
   color: var(--cshell-text, #2c241c);
   border: 1px solid var(--cshell-border, #d9cbb8);
   box-shadow: var(--cshell-shadow, 0 12px 32px rgba(44, 36, 28, 0.08));
-  padding: 1.1rem 1.2rem;
+  padding: 0;
+}
+
+.cshell-dialog__header,
+.cshell-dialog__footer {
+  flex: 0 0 auto;
+  padding: 1rem 1.2rem;
+}
+
+.cshell-dialog__header {
+  border-bottom: 1px solid var(--cshell-border, #d9cbb8);
+}
+
+.cshell-dialog__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.2rem;
 }
 
 .cshell-dialog__title {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 1.15rem;
 }
 
 .cshell-dialog__footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
-  margin-top: 1rem;
+  border-top: 1px solid var(--cshell-border, #d9cbb8);
 }
 </style>

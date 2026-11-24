@@ -306,6 +306,10 @@ async function painted(locator, theme, kind = 'surface') {
   return actual
 }
 
+async function expectThemeState(page, theme) {
+  await page.waitForFunction((value) => document.documentElement.dataset.theme === value, theme)
+}
+
 async function state(page, expectedTheme, workspace = true) {
   if (workspace) {
     await page.waitForFunction(
@@ -378,6 +382,34 @@ try {
         ['phone', 390, 844],
       ]
 
+  await check('public home theme and locale controls update teleported menu', async () => {
+    const ctx = await contextFor({ role: 'guest' })
+    const page = await ctx.newPage()
+    track(page)
+    try {
+      await navigate(page, '/')
+      const locale = page.locator('.site-header__prefs .cshell-select__trigger')
+      const themeToggle = page.locator('.site-header__prefs button').first()
+      await themeToggle.click()
+      await expectThemeState(page, 'dark')
+      await locale.click()
+      const popup = page.locator('body > .cshell-select__list')
+      await popup.waitFor()
+      const styles = await popup.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, ink: getComputedStyle(el).color }))
+      assert.equal(styles.background, palette.dark.surface)
+      assert.equal(styles.ink, palette.dark.ink)
+      await page.locator('.cshell-select__option').nth(1).click()
+      assert.equal(await page.evaluate(() => localStorage.getItem('cshell_locale')), 'zh')
+      await page.getByRole('heading', { level: 1 }).waitFor()
+      assert.notEqual(await page.locator('h1').innerText(), 'Manage your AI workspace')
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.locator('html').waitFor({ state: 'attached' })
+      assert.ok((await page.locator('h1').innerText()).length > 0)
+      await state(page, 'dark', false)
+      await screenshot(page, 'public-locale-dark')
+    } finally { await ctx.close() }
+  })
+
   for (const [device, width, height] of devices) {
     for (const theme of ['light', 'dark']) {
       const ctx = await contextFor({ width, height, theme, role: 'guest' })
@@ -413,6 +445,29 @@ try {
       await page.goto(`${base}/dashboard`, { waitUntil: 'networkidle', timeout: 120_000 })
       await page.locator('main').waitFor({ timeout: 120_000 })
 
+      if (['/dashboard', '/usage', '/keys', '/purchase', '/subscriptions'].includes(new URL(page.url()).pathname)) {
+        await check(`${label} AI section navigation semantics`, async () => {
+          const nav = page.getByRole('navigation', { name: 'Workspace sections' })
+          await nav.waitFor()
+          const expected = ['/dashboard', '/usage', '/keys']
+          if (await page.locator('body').getAttribute('data-mock-registration-disabled') !== 'true') {
+            expected.push('/purchase', '/subscriptions')
+          }
+          for (const routePath of expected) {
+            const link = nav.locator(`a[href="${routePath}"]`)
+            assert.equal(await link.count(), 1, `Missing section link ${routePath}`)
+            assert.ok((await link.getAttribute('aria-current')) === (routePath === new URL(page.url()).pathname ? 'page' : null), `Incorrect current section ${routePath}`)
+          }
+          const geometry = await nav.evaluate((el) => {
+            const r = el.getBoundingClientRect()
+            return { left:r.left, right:r.right, width:r.width, scrollWidth:el.scrollWidth, clientWidth:el.clientWidth, viewport:innerWidth }
+          })
+          assert.ok(geometry.width <= geometry.viewport + 1, `Section nav exceeds viewport ${JSON.stringify(geometry)}`)
+          assert.ok(geometry.right <= geometry.viewport + 1, `Section nav right overflow ${JSON.stringify(geometry)}`)
+          return { geometry, expected }
+        })
+      }
+
       for (const route of userRoutes) {
         await check(`${label} ${route}`, async () => {
           await navigate(page, route)
@@ -424,6 +479,111 @@ try {
           return s
         })
       }
+
+      await check(`${label} account locale portal and Escape hierarchy`, async () => {
+        await navigate(page, '/dashboard')
+        const trigger = page.locator('.account-menu__trigger')
+        await trigger.click()
+        await page.locator('.account-menu').waitFor()
+        const themeButton = page.locator('.account-menu__prefs .theme-toggle__button')
+        const select = page.locator('.account-menu__prefs .cshell-select__trigger')
+        // Clear initial keyboard focus and pointer hover before checking idle surfaces.
+        await page.mouse.move(0, 0)
+        await trigger.focus()
+        await page.waitForFunction(() => [...document.querySelectorAll('.account-menu__item, .account-menu .theme-toggle__button, .account-menu .cshell-select__trigger')].every(row => getComputedStyle(row).backgroundColor === 'rgba(0, 0, 0, 0)'))
+        const menuGeometry = await page.locator('.account-menu').evaluate(menu => {
+          const rect = menu.getBoundingClientRect()
+          return {
+            left: rect.left, right: rect.right,
+            background: getComputedStyle(menu).backgroundColor,
+            rows: [...menu.querySelectorAll('.account-menu__item, .theme-toggle__button, .cshell-select__trigger')].map(row => {
+              const r = row.getBoundingClientRect()
+              const s = getComputedStyle(row)
+              return { left: r.left, width: r.width, height: r.height, radius: s.borderRadius,
+                paddingLeft: s.paddingLeft, paddingRight: s.paddingRight,
+                align: s.textAlign, weight: s.fontWeight, background: s.backgroundColor,
+                border: s.borderWidth, color: s.color, danger: row.classList.contains('account-menu__logout') }
+            }),
+          }
+        })
+        assert.equal(menuGeometry.rows.length, 5, 'All five account rows must be present')
+        assert.ok(menuGeometry.left >= 0 && menuGeometry.right <= width, 'Account menu exceeds viewport')
+        assert.equal(menuGeometry.background, palette[resolved].surface)
+        const first = menuGeometry.rows[0]
+        for (const row of menuGeometry.rows) {
+          assert.equal(row.align, 'left', JSON.stringify(row))
+          assert.ok(['400', '500'].includes(row.weight), JSON.stringify(row))
+          assert.ok(row.height >= 44, JSON.stringify(row))
+          assert.ok(Math.abs(row.height - first.height) <= 1, JSON.stringify(menuGeometry))
+          assert.ok(Math.abs(row.width - first.width) <= 1, JSON.stringify(menuGeometry))
+          assert.ok(Math.abs(row.left - first.left) <= 1, JSON.stringify(menuGeometry))
+          assert.equal(row.radius, first.radius)
+          assert.equal(row.paddingLeft, first.paddingLeft)
+          assert.equal(row.paddingRight, first.paddingRight)
+          assert.equal(row.background, 'rgba(0, 0, 0, 0)')
+          assert.equal(row.border, '0px')
+          if (!row.danger) assert.equal(row.color, palette[resolved].ink)
+        }
+        const soft = await page.locator('.account-menu').evaluate(menu => {
+          const probe = document.createElement('span')
+          probe.style.background = 'var(--cshell-accent-soft)'
+          menu.append(probe)
+          const color = getComputedStyle(probe).backgroundColor
+          probe.remove()
+          return color
+        })
+        const rows = page.locator('.account-menu__item, .account-menu__prefs .theme-toggle__button, .account-menu__prefs .cshell-select__trigger')
+        for (const row of await rows.all()) {
+          await row.hover()
+          await row.evaluate((el, color) => new Promise((resolve, reject) => {
+            const deadline = performance.now() + 1500
+            const poll = () => getComputedStyle(el).backgroundColor === color ? resolve(true)
+              : performance.now() > deadline ? reject(new Error('Warm menu hover missing')) : requestAnimationFrame(poll)
+            poll()
+          }), soft)
+          await page.mouse.move(0, 0)
+          await page.keyboard.press('Shift')
+          await row.focus()
+          assert.ok(await row.evaluate(el => el.matches(':focus-visible')), 'Keyboard focus visibility missing')
+          await row.evaluate((el, color) => new Promise((resolve, reject) => {
+            const deadline = performance.now() + 1500
+            const poll = () => getComputedStyle(el).backgroundColor === color ? resolve(true)
+              : performance.now() > deadline ? reject(new Error('Warm menu focus missing')) : requestAnimationFrame(poll)
+            poll()
+          }), soft)
+        }
+        if (device === 'desktop' && theme !== 'system') {
+          await trigger.focus()
+          await screenshot(page, `account-menu-${theme}`)
+        }
+        await themeButton.click()
+        await state(page, resolved === 'light' ? 'dark' : 'light')
+        assert.equal(await themeButton.getAttribute('aria-pressed'), resolved === 'light' ? 'true' : 'false')
+        await themeButton.click()
+        await state(page, resolved)
+        await select.click()
+        const popup = page.locator('body > .cshell-select__list')
+        await popup.waitFor()
+        await popup.dispatchEvent('mousedown')
+        assert.ok(await page.locator('.account-menu').isVisible(), 'Pointerdown closed account menu')
+        const option = page.locator('.cshell-select__option').nth(1)
+        await option.click()
+        await page.locator('.account-menu .cshell-select__trigger').filter({ hasText: '中文' }).waitFor()
+        assert.equal(await page.evaluate(() => localStorage.getItem('cshell_locale')), 'zh')
+        assert.ok(await page.locator('.account-menu').isVisible(), 'Locale selection closed account menu')
+        await select.click()
+        const languageList = page.locator('body > .cshell-select__list')
+        await languageList.waitFor()
+        await languageList.dispatchEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        await languageList.waitFor({ state: 'hidden' })
+        assert.ok(await page.locator('.account-menu').isVisible(), 'First Escape closed account menu')
+        await page.locator('.account-menu').dispatchEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        await page.locator('.account-menu').waitFor({ state: 'hidden' })
+        assert.ok(await trigger.evaluate((el) => el === document.activeElement), 'Account focus not restored')
+        await page.reload({ waitUntil: 'networkidle' })
+        await page.locator('.account-menu__trigger').waitFor({ state: 'visible' }).catch(() => {})
+        assert.ok((await page.locator('html').evaluate(el => el.scrollWidth <= innerWidth + 1)))
+      })
 
       await check(`${label} long key dialog and nested dropdown`, async () => {
         await page.setViewportSize({ width, height: 560 })

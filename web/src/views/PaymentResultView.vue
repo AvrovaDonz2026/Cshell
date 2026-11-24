@@ -222,7 +222,7 @@ const ordersLink = computed(() =>
       <h1>{{ t('paymentResult.title') }}</h1>
       <p class="meta">
         <span>{{ t('paymentResult.tradeNo') }}:</span>
-        {{ status?.out_trade_no || outTradeNo || '—' }}
+        <span class="trade-no">{{ status?.out_trade_no || outTradeNo || '—' }}</span>
       </p>
       <p class="status" role="status">
         {{ loading && !status ? t('common.loading') : statusLabel }}
@@ -288,7 +288,12 @@ const ordersLink = computed(() =>
 
 .card h1 {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: var(--cshell-type-section);
+}
+
+.trade-no {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .status {
@@ -301,7 +306,7 @@ const ordersLink = computed(() =>
 .hint {
   margin: 0;
   color: var(--cshell-text-muted);
-  font-size: 0.92rem;
+  font-size: var(--cshell-type-small);
 }
 
 .actions {

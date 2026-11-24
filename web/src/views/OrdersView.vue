@@ -253,7 +253,7 @@ onMounted(() => {
                 </td>
                 <td>{{ order.order_type || '—' }}</td>
                 <td>{{ order.payment_type || '—' }}</td>
-                <td class="mono">
+                <td class="mono trade-no">
                   {{ order.out_trade_no || '—' }}
                 </td>
                 <td>{{ order.created_at || '—' }}</td>
@@ -302,7 +302,7 @@ onMounted(() => {
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
   min-width: 0;
 }
 
@@ -313,13 +313,13 @@ onMounted(() => {
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
 }
 
@@ -414,6 +414,11 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.table td:nth-child(2),
+.table td:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+}
+
 .table th {
   color: var(--cshell-text-muted);
   font-weight: 600;
@@ -426,8 +431,22 @@ onMounted(() => {
   border-bottom: 0;
 }
 
-.table__actions {
+.table th.table__actions,
+.table td.table__actions {
   text-align: right;
+}
+
+.table td:nth-child(2),
+.table td:nth-child(3),
+.table th:nth-child(2),
+.table th:nth-child(3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-no {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .status {

@@ -4,6 +4,8 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppShell from '@/layouts/AppShell.vue'
+import { resetDialogStack } from '@/lib/dialogContext'
+import { setLocale } from '@/i18n'
 import en from '@/i18n/locales/en'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -90,8 +92,9 @@ describe('AppShell', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
-    document.body.innerHTML = ''
+    document.body.replaceChildren()
     document.body.style.overflow = ''
+    resetDialogStack()
   })
 
   it('renders grouped navigation and gates billing groups on settings', async () => {
@@ -126,6 +129,30 @@ describe('AppShell', () => {
     expect(navText).toContain('Subscriptions')
     expect(navText).toContain('Purchase')
     expect(navText).toContain('Orders')
+  })
+
+  it('renders section navigation with exact active route and billing gates', async () => {
+    const pinia = createPinia()
+    seedUser(pinia)
+    stubSettings({ payment_enabled: true, subscription_enabled: false })
+    const wrapper = await mountShell(pinia)
+    const sectionNav = wrapper.find('nav.section-nav')
+    expect(sectionNav.attributes('aria-label')).toBe('Workspace sections')
+    expect(sectionNav.findAll('a').map((link) => link.text())).toEqual([
+      'Overview', 'Usage', 'API Keys', 'Purchase',
+    ])
+    expect(sectionNav.findAll('[aria-current="page"]').map((link) => link.attributes('href')))
+      .toEqual(['/dashboard'])
+    expect(wrapper.find('.section-nav__link[href="/dashboard"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('.section-nav__link[href="/purchase"]').exists()).toBe(true)
+    expect(wrapper.find('.section-nav__link[href="/subscriptions"]').exists()).toBe(false)
+    expect(wrapper.find('.section-nav').attributes('class')).toContain('section-nav')
+
+    await wrapper.find('.section-nav__link[href="/keys"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.section-nav__link[href="/keys"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('.section-nav__link[href="/dashboard"]').attributes('aria-current')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('persists the collapsed state in localStorage across mounts', async () => {
@@ -235,6 +262,47 @@ describe('AppShell', () => {
 
     expect(wrapper.find('.account-menu').exists()).toBe(false)
     expect(document.activeElement).toBe(accountTrigger.element)
+  })
+
+  it('keeps the account menu open for its locale portal; Escape closes select then menu', async () => {
+    const pinia = createPinia()
+    seedUser(pinia)
+    stubSettings({ payment_enabled: false, subscription_enabled: false })
+    const wrapper = await mountShell(pinia)
+    setLocale('en')
+    const trigger = wrapper.find('.account-menu__trigger')
+    await trigger.trigger('click')
+    await flushPromises()
+    const select = wrapper.find('.account-menu .cshell-select__trigger')
+    await select.trigger('click')
+    await flushPromises()
+    const list = document.querySelector('.cshell-select__list') as HTMLElement
+    expect(list).toBeTruthy()
+    list.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.account-menu').exists()).toBe(true)
+    expect(document.querySelector('.cshell-select__list')).toBeTruthy()
+    const popupOption = document.querySelector('.cshell-select__option') as HTMLElement
+    popupOption.click()
+    setLocale('zh')
+    await flushPromises()
+    expect(wrapper.find('.account-menu').exists()).toBe(true)
+    expect(document.documentElement.lang).toBe('zh')
+    expect(localStorage.getItem('cshell_locale')).toBe('zh')
+
+    await select.trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.cshell-select__list')).toBeTruthy()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('.account-menu').exists()).toBe(true)
+    expect(document.querySelector('.cshell-select__list')).toBeNull()
+
+    wrapper.find('.account-menu').element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('.account-menu').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+    wrapper.unmount()
   })
 
   it('closes the drawer when navigating to another route', async () => {

@@ -70,9 +70,9 @@ const theme = useThemeStore()
 .auth-panel {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--cshell-space-4);
   justify-content: center;
-  padding: 1.5rem;
+  padding: var(--cshell-space-6);
   min-width: 0;
 }
 
@@ -85,7 +85,7 @@ const theme = useThemeStore()
 
 .auth-panel__form {
   width: 100%;
-  max-width: 24rem;
+  max-width: var(--cshell-auth-width);
   margin: 0 auto;
   padding: 1.5rem;
   border-radius: var(--cshell-radius-window);
@@ -139,7 +139,7 @@ const theme = useThemeStore()
 
   .auth-brand__title {
     margin: 0;
-    font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+    font-size: var(--cshell-type-page);
     line-height: 1.2;
     letter-spacing: -0.01em;
   }

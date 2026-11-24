@@ -3,6 +3,9 @@ export default {
     name: 'Cshell',
   },
   shell: {
+    sectionNav: {
+      label: 'Workspace sections',
+    },
     nav: {
       label: 'Primary navigation',
       overview: 'Overview',

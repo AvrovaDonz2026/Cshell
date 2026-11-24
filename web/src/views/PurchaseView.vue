@@ -699,285 +699,287 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
     </p>
 
     <template v-else>
-      <div
-        v-for="(message, idx) in requiredBanners"
-        :key="`req-${idx}`"
-        class="banner banner--error"
-        role="alert"
-      >
-        {{ message }}
-      </div>
-      <div
-        v-for="(message, idx) in optionalBanners"
-        :key="`opt-${idx}`"
-        class="banner banner--warn"
-        role="status"
-      >
-        {{ message }}
-      </div>
+      <div class="content-panel">
+        <div
+          v-for="(message, idx) in requiredBanners"
+          :key="`req-${idx}`"
+          class="banner banner--error"
+          role="alert"
+        >
+          {{ message }}
+        </div>
+        <div
+          v-for="(message, idx) in optionalBanners"
+          :key="`opt-${idx}`"
+          class="banner banner--warn"
+          role="status"
+        >
+          {{ message }}
+        </div>
 
-      <dl class="summary-row">
-        <div class="summary-card">
-          <dt class="summary-card__label">{{ t('purchase.balance') }}</dt>
-          <dd class="summary-card__value">{{ balanceText }}</dd>
-          <p class="summary-card__caption">{{ t('purchase.balanceCaption') }}</p>
-        </div>
-        <div class="summary-card">
-          <dt class="summary-card__label">{{ t('purchase.limitsTitle') }}</dt>
-          <dd class="summary-card__value">{{ rangeText }}</dd>
-          <p class="summary-card__caption">{{ t('purchase.limitsCaption') }}</p>
-        </div>
-        <div class="summary-card">
-          <dt class="summary-card__label">{{ t('purchase.paymentMethod') }}</dt>
-          <dd class="summary-card__value summary-card__value--small">
-            {{ selectedMethodLabel }}
-          </dd>
-          <p class="summary-card__caption">{{ t('purchase.methodCaption') }}</p>
-        </div>
-      </dl>
+        <dl class="summary-row">
+          <div class="summary-card">
+            <dt class="summary-card__label">{{ t('purchase.balance') }}</dt>
+            <dd class="summary-card__value">{{ balanceText }}</dd>
+            <p class="summary-card__caption">{{ t('purchase.balanceCaption') }}</p>
+          </div>
+          <div class="summary-card">
+            <dt class="summary-card__label">{{ t('purchase.limitsTitle') }}</dt>
+            <dd class="summary-card__value">{{ rangeText }}</dd>
+            <p class="summary-card__caption">{{ t('purchase.limitsCaption') }}</p>
+          </div>
+          <div class="summary-card">
+            <dt class="summary-card__label">{{ t('purchase.paymentMethod') }}</dt>
+            <dd class="summary-card__value summary-card__value--small">
+              {{ selectedMethodLabel }}
+            </dd>
+            <p class="summary-card__caption">{{ t('purchase.methodCaption') }}</p>
+          </div>
+        </dl>
 
-      <div class="strip">
-        <div class="tabbar" role="tablist" :aria-label="t('purchase.tabsLabel')">
-          <button
-            v-if="showSubscribeTab"
-            type="button"
-            role="tab"
-            class="tabbar__tab"
-            :aria-selected="tab === 'subscription'"
-            @click="selectTab('subscription')"
+        <div class="strip">
+          <div class="tabbar" role="tablist" :aria-label="t('purchase.tabsLabel')">
+            <button
+              v-if="showSubscribeTab"
+              type="button"
+              role="tab"
+              class="tabbar__tab"
+              :aria-selected="tab === 'subscription'"
+              @click="selectTab('subscription')"
+            >
+              {{ t('purchase.tabSubscription') }}
+            </button>
+            <button
+              v-if="showRechargeTab"
+              type="button"
+              role="tab"
+              class="tabbar__tab"
+              :aria-selected="tab === 'recharge'"
+              :disabled="rechargeDisabled"
+              @click="selectTab('recharge')"
+            >
+              {{ t('purchase.tabBalance') }}
+            </button>
+          </div>
+          <p v-if="balanceDisabled" class="hint" role="status">
+            {{ t('purchase.balanceDisabled') }}
+          </p>
+        </div>
+
+        <div class="panels">
+          <section
+            v-if="tab === 'subscription' && showSubscribeTab"
+            class="panel"
+            :aria-labelledby="'purchase-plans-title'"
           >
-            {{ t('purchase.tabSubscription') }}
-          </button>
-          <button
-            v-if="showRechargeTab"
-            type="button"
-            role="tab"
-            class="tabbar__tab"
-            :aria-selected="tab === 'recharge'"
-            :disabled="rechargeDisabled"
-            @click="selectTab('recharge')"
-          >
-            {{ t('purchase.tabBalance') }}
-          </button>
-        </div>
-        <p v-if="balanceDisabled" class="hint" role="status">
-          {{ t('purchase.balanceDisabled') }}
-        </p>
-      </div>
-
-      <div class="panels">
-        <section
-          v-if="tab === 'subscription' && showSubscribeTab"
-          class="panel"
-          :aria-labelledby="'purchase-plans-title'"
-        >
-          <div class="panel__head">
-            <h2 id="purchase-plans-title" class="panel__title">
-              {{ t('purchase.plans') }}
-            </h2>
-            <p class="panel__caption">{{ t('purchase.plansCaption') }}</p>
-          </div>
-          <p v-if="!visiblePlans.length" role="status" class="state">
-            {{ t('purchase.empty') }}
-          </p>
-          <ul v-else class="plans">
-            <li v-for="plan in visiblePlans" :key="plan.id" class="plan">
-              <div class="plan__body">
-                <h3 class="plan__name">{{ plan.name }}</h3>
-                <p class="plan__desc">
-                  {{ plan.description }}
-                </p>
-                <dl class="plan__facts">
-                  <div>
-                    <dt>{{ t('purchase.price') }}</dt>
-                    <dd>{{ plan.price }} {{ plan.currency || 'USD' }}</dd>
-                  </div>
-                  <div v-if="plan.validity_days">
-                    <dt>{{ t('purchase.validity') }}</dt>
-                    <dd>{{ plan.validity_days }} {{ plan.validity_unit || 'day' }}</dd>
-                  </div>
-                </dl>
-                <ul v-if="plan.features?.length" class="features">
-                  <li v-for="(feature, idx) in plan.features" :key="idx">
-                    {{ feature }}
-                  </li>
-                </ul>
-              </div>
-              <Button
-                :disabled="!metadataReady"
-                @click="selectPlan(plan)"
-              >
-                {{ t('purchase.subscribe') }}
-              </Button>
-            </li>
-          </ul>
-        </section>
-
-        <section
-          v-if="tab === 'recharge' && showRechargeTab"
-          class="panel"
-          :aria-labelledby="'purchase-recharge-title'"
-        >
-          <div class="panel__head">
-            <h2 id="purchase-recharge-title" class="panel__title">
-              {{ t('purchase.recharge') }}
-            </h2>
-            <p class="panel__caption">{{ t('purchase.rechargeCaption') }}</p>
-          </div>
-          <label class="field">
-            <span class="field__label">{{ t('purchase.amount') }}</span>
-            <Input
-              v-model="rechargeAmount"
-              type="number"
-              step="0.01"
-              :disabled="rechargeDisabled || !metadataReady"
-              required
-            />
-            <span class="hint">
-              {{
-                globalMin !== null && globalMax !== null
-                  ? t('purchase.amountRange', { min: globalMin, max: globalMax })
-                  : t('purchase.limitsUnavailable')
-              }}
-            </span>
-          </label>
-        </section>
-
-        <section
-          v-if="!pendingOrder && ((tab === 'subscription' && selectedPlan) || (tab === 'recharge' && showRechargeTab && !rechargeDisabled))"
-          class="confirm"
-          :aria-label="t('purchase.confirmTitle')"
-        >
-          <div class="confirm__head">
-            <h2 class="confirm__title">{{ t('purchase.confirmTitle') }}</h2>
-            <span class="confirm__badge">{{ t('purchase.confirmBadge') }}</span>
-          </div>
-          <p v-if="tab === 'subscription' && selectedPlan" class="confirm__plan">
-            {{ selectedPlan.name }}
-          </p>
-          <p class="confirm__amount">
-            {{ t('purchase.price') }}: {{ previewAmount }}
-          </p>
-
-          <label class="field">
-            <span class="field__label">{{ t('purchase.paymentMethod') }}</span>
-            <Select
-              v-model="paymentType"
-              :options="methodOptions"
-              :placeholder="t('purchase.selectMethod')"
-              :disabled="!metadataReady"
-            />
-            <span v-if="selectedMethod" class="hint">
-              {{ methodSummary(selectedMethod) }}
-            </span>
-            <span
-              v-for="method in unavailableMethods"
-              :key="method.key"
-              class="hint"
-            >
-              {{ method.label }} — {{ t('purchase.unavailable') }}
-            </span>
-          </label>
-
-          <p v-if="validationMessage" class="hint hint--error" role="status">
-            {{ validationMessage }}
-          </p>
-
-          <p v-if="confirmError" class="error" role="alert">
-            {{ confirmError }}
-          </p>
-          <div class="confirm__actions">
-            <Button
-              v-if="tab === 'subscription'"
-              variant="secondary"
-              :disabled="confirming"
-              @click="clearSelection"
-            >
-              {{ t('common.cancel') }}
-            </Button>
-            <Button
-              :disabled="!canConfirm || confirming || Boolean(pendingOrder)"
-              @click="confirmPayment"
-            >
-              {{ confirming ? t('purchase.creating') : t('purchase.confirmPayment') }}
-            </Button>
-          </div>
-        </section>
-
-        <section
-          v-if="pendingOrder"
-          class="pending"
-          :aria-label="t('purchase.pendingTitle')"
-        >
-          <div class="confirm__head">
-            <h2 class="confirm__title">{{ t('purchase.pendingTitle') }}</h2>
-            <span class="pending__status" role="status">
-              {{ t(`purchase.status.${pendingStatus}`) }}
-            </span>
-          </div>
-          <p>
-            {{ t('purchase.price') }}: {{ pendingAmountText }}
-          </p>
-          <p>
-            {{ t('purchase.paymentMethod') }}: {{ pendingMethodLabel }}
-          </p>
-          <p v-if="pendingCountdown" class="hint">
-            {{ t('purchase.pendingExpires') }}: {{ pendingCountdown }}
-          </p>
-          <p v-else-if="pendingOrder.expiresAt" class="hint">
-            {{ t('purchase.pendingExpiresAt') }}: {{ pendingOrder.expiresAt }}
-          </p>
-
-          <div v-if="pendingOrder.qrImageSrc" class="qr">
-            <p>{{ t('purchase.scanQr') }}</p>
-            <img :src="pendingOrder.qrImageSrc" alt="" class="qr__img">
-            <p v-if="pendingOrder.qrRaw && pendingOrder.qrRaw !== pendingOrder.qrImageSrc" class="qr__raw">
-              {{ pendingOrder.qrRaw }}
+            <div class="panel__head">
+              <h2 id="purchase-plans-title" class="panel__title">
+                {{ t('purchase.plans') }}
+              </h2>
+              <p class="panel__caption">{{ t('purchase.plansCaption') }}</p>
+            </div>
+            <p v-if="!visiblePlans.length" role="status" class="state">
+              {{ t('purchase.empty') }}
             </p>
-          </div>
-          <p v-else-if="pendingOrder.qrRaw" class="qr__raw">{{ pendingOrder.qrRaw }}</p>
+            <ul v-else class="plans">
+              <li v-for="plan in visiblePlans" :key="plan.id" class="plan">
+                <div class="plan__body">
+                  <h3 class="plan__name">{{ plan.name }}</h3>
+                  <p class="plan__desc">
+                    {{ plan.description }}
+                  </p>
+                  <dl class="plan__facts">
+                    <div>
+                      <dt>{{ t('purchase.price') }}</dt>
+                      <dd>{{ plan.price }} {{ plan.currency || 'USD' }}</dd>
+                    </div>
+                    <div v-if="plan.validity_days">
+                      <dt>{{ t('purchase.validity') }}</dt>
+                      <dd>{{ plan.validity_days }} {{ plan.validity_unit || 'day' }}</dd>
+                    </div>
+                  </dl>
+                  <ul v-if="plan.features?.length" class="features">
+                    <li v-for="(feature, idx) in plan.features" :key="idx">
+                      {{ feature }}
+                    </li>
+                  </ul>
+                </div>
+                <Button
+                  :disabled="!metadataReady"
+                  @click="selectPlan(plan)"
+                >
+                  {{ t('purchase.subscribe') }}
+                </Button>
+              </li>
+            </ul>
+          </section>
 
-          <p v-if="pendingError" class="error" role="alert">
-            {{ pendingError }}
-          </p>
+          <section
+            v-if="tab === 'recharge' && showRechargeTab"
+            class="panel"
+            :aria-labelledby="'purchase-recharge-title'"
+          >
+            <div class="panel__head">
+              <h2 id="purchase-recharge-title" class="panel__title">
+                {{ t('purchase.recharge') }}
+              </h2>
+              <p class="panel__caption">{{ t('purchase.rechargeCaption') }}</p>
+            </div>
+            <label class="field">
+              <span class="field__label">{{ t('purchase.amount') }}</span>
+              <Input
+                v-model="rechargeAmount"
+                type="number"
+                step="0.01"
+                :disabled="rechargeDisabled || !metadataReady"
+                required
+              />
+              <span class="hint">
+                {{
+                  globalMin !== null && globalMax !== null
+                    ? t('purchase.amountRange', { min: globalMin, max: globalMax })
+                    : t('purchase.limitsUnavailable')
+                }}
+              </span>
+            </label>
+          </section>
 
-          <div class="confirm__actions">
-            <Button
-              variant="secondary"
-              :disabled="pendingLoading || pendingTerminal"
-              @click="continuePending(false)"
-            >
-              {{ t('purchase.refreshContinue') }}
-            </Button>
-            <Button
-              variant="secondary"
-              :disabled="!pendingOrder.orderId || pendingLoading || pendingTerminal"
-              @click="cancelPending"
-            >
-              {{ t('purchase.cancelOrder') }}
-            </Button>
-            <Button
-              variant="secondary"
-              :disabled="!canStartNewOrder"
-              @click="startNewOrder"
-            >
-              {{ t('purchase.startNewOrder') }}
-            </Button>
-            <Button
-              v-if="pendingOrder.payUrl"
-              variant="secondary"
-              @click="openPendingPayment"
-            >
-              {{ t('purchase.openPayment') }}
-            </Button>
-          </div>
-          <p v-if="!canStartNewOrder" class="hint">
-            {{ t('purchase.startNewHint') }}
-          </p>
-          <RouterLink class="link" :to="{ name: 'payment-result', query: pendingQuery }">
-            {{ t('purchase.viewResult') }}
-          </RouterLink>
-        </section>
+          <section
+            v-if="!pendingOrder && ((tab === 'subscription' && selectedPlan) || (tab === 'recharge' && showRechargeTab && !rechargeDisabled))"
+            class="confirm"
+            :aria-label="t('purchase.confirmTitle')"
+          >
+            <div class="confirm__head">
+              <h2 class="confirm__title">{{ t('purchase.confirmTitle') }}</h2>
+              <span class="confirm__badge">{{ t('purchase.confirmBadge') }}</span>
+            </div>
+            <p v-if="tab === 'subscription' && selectedPlan" class="confirm__plan">
+              {{ selectedPlan.name }}
+            </p>
+            <p class="confirm__amount">
+              {{ t('purchase.price') }}: {{ previewAmount }}
+            </p>
+
+            <label class="field">
+              <span class="field__label">{{ t('purchase.paymentMethod') }}</span>
+              <Select
+                v-model="paymentType"
+                :options="methodOptions"
+                :placeholder="t('purchase.selectMethod')"
+                :disabled="!metadataReady"
+              />
+              <span v-if="selectedMethod" class="hint">
+                {{ methodSummary(selectedMethod) }}
+              </span>
+              <span
+                v-for="method in unavailableMethods"
+                :key="method.key"
+                class="hint"
+              >
+                {{ method.label }} — {{ t('purchase.unavailable') }}
+              </span>
+            </label>
+
+            <p v-if="validationMessage" class="hint hint--error" role="status">
+              {{ validationMessage }}
+            </p>
+
+            <p v-if="confirmError" class="error" role="alert">
+              {{ confirmError }}
+            </p>
+            <div class="confirm__actions">
+              <Button
+                v-if="tab === 'subscription'"
+                variant="secondary"
+                :disabled="confirming"
+                @click="clearSelection"
+              >
+                {{ t('common.cancel') }}
+              </Button>
+              <Button
+                :disabled="!canConfirm || confirming || Boolean(pendingOrder)"
+                @click="confirmPayment"
+              >
+                {{ confirming ? t('purchase.creating') : t('purchase.confirmPayment') }}
+              </Button>
+            </div>
+          </section>
+
+          <section
+            v-if="pendingOrder"
+            class="pending"
+            :aria-label="t('purchase.pendingTitle')"
+          >
+            <div class="confirm__head">
+              <h2 class="confirm__title">{{ t('purchase.pendingTitle') }}</h2>
+              <span class="pending__status" role="status">
+                {{ t(`purchase.status.${pendingStatus}`) }}
+              </span>
+            </div>
+            <p>
+              {{ t('purchase.price') }}: {{ pendingAmountText }}
+            </p>
+            <p>
+              {{ t('purchase.paymentMethod') }}: {{ pendingMethodLabel }}
+            </p>
+            <p v-if="pendingCountdown" class="hint">
+              {{ t('purchase.pendingExpires') }}: {{ pendingCountdown }}
+            </p>
+            <p v-else-if="pendingOrder.expiresAt" class="hint">
+              {{ t('purchase.pendingExpiresAt') }}: {{ pendingOrder.expiresAt }}
+            </p>
+
+            <div v-if="pendingOrder.qrImageSrc" class="qr">
+              <p>{{ t('purchase.scanQr') }}</p>
+              <img :src="pendingOrder.qrImageSrc" alt="" class="qr__img">
+              <p v-if="pendingOrder.qrRaw && pendingOrder.qrRaw !== pendingOrder.qrImageSrc" class="qr__raw">
+                {{ pendingOrder.qrRaw }}
+              </p>
+            </div>
+            <p v-else-if="pendingOrder.qrRaw" class="qr__raw">{{ pendingOrder.qrRaw }}</p>
+
+            <p v-if="pendingError" class="error" role="alert">
+              {{ pendingError }}
+            </p>
+
+            <div class="confirm__actions">
+              <Button
+                variant="secondary"
+                :disabled="pendingLoading || pendingTerminal"
+                @click="continuePending(false)"
+              >
+                {{ t('purchase.refreshContinue') }}
+              </Button>
+              <Button
+                variant="secondary"
+                :disabled="!pendingOrder.orderId || pendingLoading || pendingTerminal"
+                @click="cancelPending"
+              >
+                {{ t('purchase.cancelOrder') }}
+              </Button>
+              <Button
+                variant="secondary"
+                :disabled="!canStartNewOrder"
+                @click="startNewOrder"
+              >
+                {{ t('purchase.startNewOrder') }}
+              </Button>
+              <Button
+                v-if="pendingOrder.payUrl"
+                variant="secondary"
+                @click="openPendingPayment"
+              >
+                {{ t('purchase.openPayment') }}
+              </Button>
+            </div>
+            <p v-if="!canStartNewOrder" class="hint">
+              {{ t('purchase.startNewHint') }}
+            </p>
+            <RouterLink class="link" :to="{ name: 'payment-result', query: pendingQuery }">
+              {{ t('purchase.viewResult') }}
+            </RouterLink>
+          </section>
+        </div>
       </div>
     </template>
   </div>
@@ -986,7 +988,26 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 <style scoped>
 .page {
   display: grid;
-  gap: 1.4rem;
+  gap: var(--cshell-page-gap);
+  width: min(100%, var(--cshell-content-width));
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.content-panel {
+  display: grid;
+  gap: 1rem;
+  padding: var(--cshell-panel-padding);
+  border: 1px solid var(--cshell-border);
+  border-radius: var(--cshell-radius-panel);
+  background: var(--cshell-surface);
   min-width: 0;
 }
 
@@ -997,13 +1018,13 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 
 .page h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--cshell-type-page);
   letter-spacing: -0.01em;
 }
 
 .page__subtitle {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--cshell-type-body);
   color: var(--cshell-text-muted);
 }
 
@@ -1081,7 +1102,7 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
   padding: 0.2rem;
   border-radius: var(--cshell-radius-control);
   border: 1px solid var(--cshell-border);
-  background: var(--cshell-bg-elevated);
+  background: var(--cshell-surface-muted);
 }
 
 .tabbar__tab {
@@ -1116,7 +1137,7 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 .panel {
   display: grid;
   gap: 1rem;
-  padding: 1.3rem;
+  padding: var(--cshell-panel-padding);
   border-radius: var(--cshell-radius-panel);
   border: 1px solid var(--cshell-border);
   background: var(--cshell-surface);
@@ -1130,12 +1151,12 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 
 .panel__title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: var(--cshell-type-section);
 }
 
 .panel__caption {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   color: var(--cshell-text-muted);
 }
 
@@ -1249,7 +1270,7 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 
 .confirm__title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: var(--cshell-type-section);
 }
 
 .confirm__badge {
@@ -1296,7 +1317,7 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 .qr__raw {
   margin: 0;
   font-family: var(--cshell-font-mono);
-  font-size: 0.82rem;
+  font-size: var(--cshell-type-caption);
   overflow-wrap: anywhere;
 }
 
@@ -1320,6 +1341,10 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
 }
 
 @media (max-width: 760px) {
+  .content-panel {
+    padding: var(--cshell-panel-padding-mobile);
+  }
+
   .summary-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1327,7 +1352,7 @@ if (pendingOrder.value) { startTicking(); void continuePending(true) }
   .panel,
   .confirm,
   .pending {
-    padding: 1rem;
+    padding: var(--cshell-panel-padding-mobile);
   }
 
   .confirm__head {

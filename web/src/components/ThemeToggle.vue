@@ -9,8 +9,11 @@ const { t } = useI18n()
 
 <template>
   <Button
-    variant="ghost"
+    class="theme-toggle__button"
+    variant="secondary"
+    block
     :aria-label="t('shell.theme.toggle')"
+    :aria-pressed="theme.isDark"
     @click="theme.toggle()"
   >
     {{ theme.isDark ? t('shell.theme.light') : t('shell.theme.dark') }}
