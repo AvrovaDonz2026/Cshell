@@ -61,15 +61,15 @@ function monthLabel(cell: HeatmapMonthCell): string {
   <div class="legend" aria-hidden="true"><span>{{ translate('usage.less') }}</span><span v-for="level in 5" :key="level" class="legend__swatch" :class="`cell--l${level - 1}`" /><span>{{ translate('usage.more') }}</span></div>
 </template>
 <style scoped>
-.hour-grid { display:grid; grid-template-columns:repeat(8,minmax(2.25rem,1fr)); gap:.35rem; max-width:36rem; }
-.month-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(5.5rem,1fr)); gap:.4rem; }
-.heatmap-month-labels { display:grid; gap:.25rem; margin:0 0 .35rem; font-size:.7rem; color:var(--cshell-text-muted); }
+.hour-grid { display:grid; grid-template-columns:repeat(8,minmax(2.25rem,1fr)); gap:.25rem; max-width:36rem; }
+.month-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(5.5rem,1fr)); gap:.3rem; }
+.heatmap-month-labels { display:grid; gap:.15rem; margin:0 0 .25rem; font-size:.7rem; line-height:1; color:var(--cshell-text-muted); }
 .month-label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .day-layout { display:grid; min-width:24rem; }
-.weekdays { display:grid; grid-template-rows:repeat(7,minmax(0,1fr)); gap:.25rem; font-size:.65rem; color:var(--cshell-text-muted); align-items:center; }
+.weekdays { display:grid; grid-template-rows:repeat(7,minmax(0,1fr)); gap:.25rem; font-size:.65rem; line-height:1; color:var(--cshell-text-muted); align-items:center; }
 .day-grid { display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,minmax(0,1fr)); gap:.25rem; }
-.cell { aspect-ratio:1; min-width:0; min-height:1rem; border:1px solid transparent; border-radius:3px; padding:0; font-size:.65rem; cursor:default; color:var(--cshell-text); }
-.cell--month { aspect-ratio:auto; min-height:2.5rem; padding:.35rem; }
+.cell { aspect-ratio:1; min-width:0; min-height:0.75rem; border:1px solid transparent; border-radius:3px; padding:0; font-size:.65rem; cursor:default; color:var(--cshell-text); }
+.cell--month { aspect-ratio:auto; min-height:1.75rem; padding:.2rem; }
 .cell--l0 { background:var(--cshell-heat-0); } .cell--l1 { background:var(--cshell-heat-1); } .cell--l2 { background:var(--cshell-heat-2); } .cell--l3 { background:var(--cshell-heat-3); color:var(--cshell-heat-3-ink); } .cell--l4 { background:var(--cshell-heat-4); color:var(--cshell-heat-4-ink); }
 .cell--outside { opacity:.28; }
 .cell--missing { background:repeating-linear-gradient(135deg,transparent,transparent 3px,#ac95743b 3px,#ac95743b 5px); }

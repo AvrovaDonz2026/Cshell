@@ -275,3 +275,31 @@ Verification (all executed locally):
 | Strict browser matrix | `WORKSPACE_CHROME=/opt/google/chrome/chrome node scripts/cshell-web-browser.mjs` → **169 checks passed, 0 failures, 0 runtime errors, 0 console errors, 0 request failures, 0 HTTP failures**. No existing assertions needed weakening; the dashboard layout change required no browser-matrix assertion updates (its dashboard gates are nav/overflow/theme based) |
 
 The stage-one uncommitted fixes in the tree (dialogContext scroll lock, `HeatmapGrid` compact prop, `keys.subtitle` / `ipCountLabel` i18n keys, AppShell, dialog-escape and heatmap-grid test additions) are preserved untouched and are covered by the green run above.
+
+## Usage heatmap compaction + line-chart view toggle — 2026-11-24
+
+User feedback on the usage area: the month/year heatmap took too much vertical space, and the same data was only visible as a heatmap. Both addressed on branch `cursor/independent-web-frontend` (uncommitted; not pushed). No API, fetch, aggregation, or draft/applied date semantics changed — the chart derives its series from the same loaded `TrendPoint[]`.
+
+- `web/src/components/user/HeatmapGrid.vue`: compacted footprint — day-cell `min-height` 1rem→0.75rem (12px ≥ the 10px clickability floor), grid gaps .35rem→.25rem, month-label margins tightened with `line-height:1`, and multi-year `.cell--month` `min-height` 2.5rem→1.75rem (padding .35rem→.2rem). Legend, zero/missing/outside distinctions, and the `compact` prop all preserved. A full year view's day grid now measures ~150px tall in the browser (was ~208px).
+- `web/src/utils/trendChart.ts` (new): `buildTrendSeries(points, metric)` — sorts day/hour buckets, derives per-slot values via the existing `metricValue`, and marks `contiguous: false` where the previous calendar slot has no point. Missing days stay absent (gaps); explicit zeros stay zero. No new endpoints.
+- `web/src/components/user/TrendLineChart.vue` (new): dependency-free SVG line chart (no chart.js). Props `series`/`metric`/`translate`/`compact`; viewBox-based responsive width, fixed 180px min height (140px compact for the dashboard), area fill `--cshell-accent-soft`, line `--cshell-accent`, subtle gridlines `--cshell-border`, muted start/end-date + max-value captions, `role="img"` with an aria-label summarizing range/metric/total, and the dashboard empty-state style when there is nothing to plot.
+- `web/src/components/user/UsageTrendChart.vue` (new): thin wrapper that renders `TrendLineChart` in place of `HeatmapGrid` for the same section when line mode is on; heatmap props stay untouched and the same scale/metric/date controls apply. For the `hour` scale the x axis is hours of the day (`HH:MM` captions).
+- `web/src/views/UsageView.vue` + `web/src/views/DashboardView.vue`: added a segmented heatmap|line toggle (aria-pressed, styled like the scale group) in both trend panels; the metric switch re-derives the series with zero additional requests (asserted in the browser gate). Dashboard passes `compact` for a shorter chart.
+- `web/src/i18n/locales/en.ts` / `zh.ts`: added `usage.viewLabel` / `usage.viewHeatmap` / `usage.viewLine`, `usage.lineChartSummary`, `usage.lineChartEmpty`.
+- `web/src/lib/viewPreference.ts` (new): localStorage-backed persistence of the heatmap|line choice per surface (`cshell_usage_view` / `cshell_dash_view`), ignoring unavailable or unrecognized storage.
+- `scripts/cshell-web-browser.mjs`: new strict check — default is heatmap, toggling to line renders an `svg[role="img"]` with a populated aria-label, ≥180px tall, stroke matching the theme `--cshell-accent` in light and dark (theme switched via the account menu), metric switch to Tokens changes the max caption without any new trend request, and toggling back restores the heatmap grid. Added `accent` to the script's palette probe data. No overflow/error gates weakened.
+
+Tests: `web/tests/trend-line-chart.spec.ts` (new, 8 tests — plotted-point count, gap handling without fabricated zeros, explicit zero plotted as zero, metric re-derivation, empty state, aria-label, hour-bucket captions, all-zero baseline rendering) and `web/tests/heatmap-grid.spec.ts` (+1 compaction test asserting the new min-heights/gaps, ≥10px cells, legend presence, and cell-count semantics).
+
+Verification (all executed locally):
+
+| Gate | Result |
+|---|---|
+| `pnpm --dir web lint:check` | pass (0 warnings, `--max-warnings 0`) |
+| `pnpm --dir web typecheck` | pass |
+| `pnpm --dir web test:run` | 19 files / **135 tests passed** (was 126; +9) |
+| `pnpm --dir web build` | pass (vite production build; chart is a small shared chunk, no chart library added) |
+| Static preview | `CSHELL_WEB_STATIC=1 node scripts/cshell-web-preview.mjs stop && start && status` → healthy at `http://127.0.0.1:4284` (static build scope) |
+| Strict browser matrix | `WORKSPACE_CHROME=/opt/google/chrome/chrome node scripts/cshell-web-browser.mjs` → **170 checks passed, 0 failures, 0 runtime errors, 0 console errors, 0 request failures, 0 HTTP failures** |
+
+Evidence: `artifacts/cshell-web/acceptance/usage-line-light.png`, `usage-line-dark.png` (usage page in line mode, both themes) and `usage-heatmap-compact-year.png` (compacted year-scale heatmap).

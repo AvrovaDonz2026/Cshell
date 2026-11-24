@@ -60,4 +60,26 @@ describe('shared HeatmapGrid', () => {
     expect(minWidth(roomy)).toBe('24rem')
     expect(minWidth(compact)).toBe('18rem')
   })
+
+  it('keeps day cells at least 10px tall with the compacted footprint', async () => {
+    // 0.75rem = 12px >= the 10px minimum clickable height.
+    const source = (await import('@/components/user/HeatmapGrid.vue?raw')).default as string
+    expect(source).toContain('min-height:0.75rem')
+    // Compaction: cell min-height below the previous 1rem, tighter gaps.
+    expect(source).not.toContain('min-height:1rem;')
+    expect(source).toContain('min-height:1.75rem') // multi-year month cells 2.5rem -> 1.75rem
+    expect(source).not.toContain('min-height:2.5rem')
+    expect(source).not.toContain('gap:.35rem')
+    expect(source).not.toContain('gap:.4rem')
+    // Legend (Less/More swatches) stays.
+    const wrapper = mount(HeatmapGrid, { props })
+    expect(wrapper.find('.legend').exists()).toBe(true)
+    expect(wrapper.findAll('.legend__swatch')).toHaveLength(5)
+    // Zero/missing/outside semantics survive compaction: Mon 11-02 grid pads
+    // back to Sunday and forward to Saturday -> 7 cells (1 explicit zero,
+    // 1 missing, 5 outside).
+    expect(wrapper.findAll('[role="gridcell"]')).toHaveLength(7)
+    expect(wrapper.text()).toContain('Less')
+    expect(wrapper.text()).toContain('More')
+  })
 })

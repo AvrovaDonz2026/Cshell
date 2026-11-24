@@ -255,6 +255,12 @@ export default {
     metricCost: 'Cost',
     metricActualCost: 'Actual cost',
     heatmapTitle: 'Usage heatmap',
+    viewLabel: 'View type',
+    viewHeatmap: 'Heatmap',
+    viewLine: 'Line',
+    lineChartSummary:
+      'Usage line chart of {metric} from {start} to {end}; total {total}.',
+    lineChartEmpty: 'No data points to chart for this period',
     modelsTitle: 'Models summary',
     modelsModel: 'Model',
     modelsRequests: 'Requests',

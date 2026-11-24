@@ -6,7 +6,13 @@ import { fetchMyOrders, fetchSubscriptionSummary } from '@/api/billing'
 import { fetchKeys } from '@/api/keys'
 import { fetchDashboardStats, fetchUsageTrend } from '@/api/usage'
 import { buildHeatmapDays, buildYearMonthLabels, defaultRangeForScale, weekCountForDays, type HeatmapScale } from '@/utils/heatmap'
-import HeatmapGrid from '@/components/user/HeatmapGrid.vue'
+import UsageTrendChart from '@/components/user/UsageTrendChart.vue'
+import { buildTrendSeries } from '@/utils/trendChart'
+import {
+  loadTrendViewMode,
+  saveTrendViewMode,
+  type TrendViewMode,
+} from '@/lib/viewPreference'
 import type { TrendPoint } from '@/api/types'
 import type { ApiKey, DashboardStats, SubscriptionSummary } from '@/api/types'
 import { ApiError } from '@/api/types'
@@ -19,6 +25,16 @@ const settings = useSettingsStore()
 
 const stats = ref<DashboardStats | null>(null)
 const dashboardScale = ref<HeatmapScale>('month')
+/** Dashboard keeps its own persisted view choice, separate from Usage. */
+const DASH_VIEW_STORAGE_KEY = 'cshell_dash_view'
+const dashboardViewMode = ref<TrendViewMode>(
+  loadTrendViewMode(DASH_VIEW_STORAGE_KEY),
+)
+
+function onDashboardViewMode(next: TrendViewMode): void {
+  dashboardViewMode.value = next
+  saveTrendViewMode(DASH_VIEW_STORAGE_KEY, next)
+}
 const dashboardDraftStart = ref('')
 const dashboardDraftEnd = ref('')
 const dashboardStart = ref('')
@@ -33,6 +49,12 @@ const dashboardCells = computed(() => buildHeatmapDays(dashboardPoints.value, da
 const dashboardWeeks = computed(() => weekCountForDays(dashboardCells.value))
 const dashboardLabels = computed(() => buildYearMonthLabels(dashboardCells.value, locale.value === 'zh' ? 'zh' : 'en'))
 const dashboardMax = computed(() => Math.max(0, ...dashboardCells.value.filter((cell) => cell.inRange).map((cell) => cell.value)))
+/** Line-chart series for the dashboard trend panel; derived from the loaded points. */
+const dashboardTrendSeries = computed(() => buildTrendSeries(dashboardPoints.value, dashboardMetric))
+const dashboardViewModes: { id: 'heatmap' | 'line'; labelKey: string }[] = [
+  { id: 'heatmap', labelKey: 'usage.viewHeatmap' },
+  { id: 'line', labelKey: 'usage.viewLine' },
+]
 const loading = ref(true)
 const error = ref('')
 
@@ -292,6 +314,9 @@ onMounted(() => {
             <label><span>{{ t('usage.startDate') }}</span><input v-model="dashboardDraftStart" type="date"></label>
             <label><span>{{ t('usage.endDate') }}</span><input v-model="dashboardDraftEnd" type="date"></label>
             <button type="button" @click="applyDashboardRange">{{ t('common.apply') }}</button>
+            <div class="segmented" role="group" :aria-label="t('usage.viewLabel')">
+              <button v-for="item in dashboardViewModes" :key="item.id" type="button" :aria-pressed="dashboardViewMode === item.id" @click="onDashboardViewMode(item.id)">{{ t(item.labelKey) }}</button>
+            </div>
             <div class="segmented" role="group" :aria-label="t('usage.scaleLabel')">
               <button v-for="item in ['month', 'year', 'multi-year'] as const" :key="item" type="button" :aria-pressed="dashboardScale === item" @click="setDashboardScale(item)">{{ t(`usage.scale${item === 'multi-year' ? 'MultiYear' : item[0].toUpperCase() + item.slice(1)}`) }}</button>
             </div>
@@ -299,7 +324,7 @@ onMounted(() => {
           <p class="section-caption" role="status">{{ dashboardStart }} — {{ dashboardEnd }} · {{ Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }}</p>
           <p v-if="dashboardLoading" role="status" class="state">{{ t('common.loading') }}</p>
           <p v-else-if="dashboardError" role="alert" class="error">{{ dashboardError }}</p>
-          <HeatmapGrid v-else compact :scale="dashboardScale" :hour-cells="[]" :day-cells="dashboardCells" :month-cells="[]" :week-count="dashboardWeeks" :month-labels="dashboardLabels" :weekday-labels="[t('usage.weekdays.sun'), t('usage.weekdays.mon'), t('usage.weekdays.tue'), t('usage.weekdays.wed'), t('usage.weekdays.thu'), t('usage.weekdays.fri'), t('usage.weekdays.sat')]" :max-value="dashboardMax" :metric="dashboardMetric" :translate="t" />
+          <UsageTrendChart v-else compact :scale="dashboardScale" :series="dashboardTrendSeries" :metric="dashboardMetric" :day-cells="dashboardCells" :week-count="dashboardWeeks" :month-labels="dashboardLabels" :weekday-labels="[t('usage.weekdays.sun'), t('usage.weekdays.mon'), t('usage.weekdays.tue'), t('usage.weekdays.wed'), t('usage.weekdays.thu'), t('usage.weekdays.fri'), t('usage.weekdays.sat')]" :max-value="dashboardMax" :view-mode="dashboardViewMode" :translate="t" />
         </section>
 
         <section class="totals" :aria-labelledby="'dash-totals-title'">
@@ -504,6 +529,9 @@ onMounted(() => {
 .dashboard-filters { display:flex; flex-wrap:wrap; gap:.5rem; align-items:end; }
 .dashboard-filters label { display:grid; gap:.2rem; font-size:.75rem; color:var(--cshell-text-muted); }
 .dashboard-filters button { min-height:2rem; }
+.segmented { display:inline-flex; flex-wrap:wrap; gap:.2rem; width:fit-content; max-width:100%; padding:.2rem; border-radius:var(--cshell-radius-control); border:1px solid var(--cshell-border); background:var(--cshell-bg-elevated); }
+.segmented__btn { min-height:2rem; padding:.25rem .65rem; border:0; border-radius:calc(var(--cshell-radius-control) - 3px); background:transparent; color:var(--cshell-text-muted); font-size:.82rem; cursor:pointer; }
+.segmented__btn[aria-pressed='true'] { background:var(--cshell-surface); color:var(--cshell-text); font-weight:600; box-shadow:0 1px 2px rgba(44, 36, 28, 0.1); }
 .usage-block__head {
   display: grid;
   gap: 0.1rem;
@@ -733,6 +761,10 @@ onMounted(() => {
 @media (max-width: 1023px) {
   .rail-card__link,
   .pending-list__value {
+    min-height: 44px;
+  }
+
+  .segmented__btn {
     min-height: 44px;
   }
 }

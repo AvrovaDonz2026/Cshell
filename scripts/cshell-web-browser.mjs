@@ -256,11 +256,13 @@ const palette = {
     paper: 'rgb(244, 239, 230)',
     surface: 'rgb(255, 249, 240)',
     ink: 'rgb(44, 36, 28)',
+    accent: 'rgb(169, 94, 69)',
   },
   dark: {
     paper: 'rgb(28, 24, 20)',
     surface: 'rgb(46, 38, 31)',
     ink: 'rgb(243, 232, 218)',
+    accent: 'rgb(220, 152, 123)',
   },
 }
 
@@ -780,6 +782,81 @@ try {
       const rows = logs.locator('tbody tr')
       assert.ok((await rows.count()) > 0, 'Usage log rows missing')
       await screenshot(page, 'usage-models-logs')
+    })
+
+    await check('usage line chart toggle renders dependency-free SVG in light and dark', async () => {
+      await navigate(page, '/usage')
+      const region = page.locator('[aria-labelledby="usage-calendar-title"]')
+      const viewGroup = page.getByRole('group', { name: 'View type' })
+      await viewGroup.waitFor()
+      assert.equal(await viewGroup.locator('button').count(), 2)
+      const [heatmapBtn, lineBtn] = await viewGroup.locator('button').all()
+      assert.equal(await heatmapBtn.getAttribute('aria-pressed'), 'true', 'Heatmap must be the default view')
+
+      await lineBtn.click()
+      assert.equal(await lineBtn.getAttribute('aria-pressed'), 'true')
+      assert.equal(await heatmapBtn.getAttribute('aria-pressed'), 'false')
+      const svg = region.locator('svg[role="img"]')
+      await svg.waitFor()
+      const aria = await svg.getAttribute('aria-label')
+      assert.match(aria, /requests from \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}; total \d/, `aria-label: ${aria}`)
+      const geometry = await svg.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return { width: r.width, height: r.height }
+      })
+      assert.ok(geometry.height >= 180, `Line chart too short: ${JSON.stringify(geometry)}`)
+      // Stroke follows the theme accent token in both themes. The theme is
+      // switched through the account menu (the only in-app toggle), not the OS.
+      for (const theme of ['light', 'dark']) {
+        const current = await page.evaluate(() => document.documentElement.dataset.theme)
+        if (current !== theme) {
+          await page.locator('.account-menu__trigger').click()
+          const themeButton = page.locator('.account-menu__prefs .theme-toggle__button')
+          await themeButton.waitFor()
+          await themeButton.click()
+          await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 15_000 })
+          await page.keyboard.press('Escape')
+          await page.locator('.account-menu').waitFor({ state: 'hidden' })
+        }
+        await state(page, theme)
+        const expected = await page.evaluate(() => {
+          const probe = document.createElement('span')
+          probe.style.color = 'var(--cshell-accent)'
+          document.body.append(probe)
+          const color = getComputedStyle(probe).color
+          probe.remove()
+          return color
+        })
+        const stroke = await svg.locator('path.trend-chart__line').evaluate((el) => getComputedStyle(el).stroke)
+        assert.equal(stroke, expected, `Line stroke mismatch in ${theme}: ${stroke}`)
+        await screenshot(page, `usage-line-${theme}`)
+      }
+
+      // Metric switch re-derives the series in place — no new trend fetch.
+      let trendFetches = 0
+      const observe = (req) => { if (new URL(req.url()).pathname.includes('/usage/dashboard/trend')) trendFetches++ }
+      page.on('request', observe)
+      try {
+        const before = trendFetches
+        // Token caption (max value) must follow the switched metric.
+        const maxCaption = region.locator('.trend-chart__max')
+        const beforeText = await maxCaption.innerText()
+        await page.getByRole('button', { name: 'Tokens', exact: true }).click()
+        await page.waitForFunction(
+          (prev) => {
+            const el = document.querySelector('[aria-labelledby="usage-calendar-title"] .trend-chart__max')
+            return el !== null && el.textContent !== prev
+          },
+          beforeText,
+        )
+        assert.ok(trendFetches === before, 'Metric switch triggered a new trend request')
+        await lineBtn.waitFor()
+      } finally { page.off('request', observe) }
+
+      // Back to heatmap restores the grid in the same section.
+      await heatmapBtn.click()
+      await region.locator('[role="grid"]').first().waitFor()
+      assert.equal(await svg.count(), 0, 'Heatmap view still shows the line chart')
     })
 
     await ctx.close()

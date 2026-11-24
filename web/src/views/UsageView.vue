@@ -6,7 +6,13 @@ import type { TrendResponse, UsageLog } from '@/api/types'
 import { ApiError } from '@/api/types'
 import Button from '@/components/primitives/Button.vue'
 import Input from '@/components/primitives/Input.vue'
-import HeatmapGrid from '@/components/user/HeatmapGrid.vue'
+import UsageTrendChart from '@/components/user/UsageTrendChart.vue'
+import { buildTrendSeries } from '@/utils/trendChart'
+import {
+  loadTrendViewMode,
+  saveTrendViewMode,
+  type TrendViewMode,
+} from '@/lib/viewPreference'
 import {
   buildHeatmapDays,
   buildHeatmapHours,
@@ -28,6 +34,16 @@ const { t, locale } = useI18n()
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const scale = ref<HeatmapScale>('month')
 const metric = ref<HeatmapMetric>('requests')
+/** View choice persists per view under its own localStorage key. */
+const USAGE_VIEW_STORAGE_KEY = 'cshell_usage_view'
+const viewMode = ref<TrendViewMode>(
+  loadTrendViewMode(USAGE_VIEW_STORAGE_KEY),
+)
+
+function onViewMode(next: TrendViewMode): void {
+  viewMode.value = next
+  saveTrendViewMode(USAGE_VIEW_STORAGE_KEY, next)
+}
 
 /** Draft filters: edited by the date inputs only. */
 const draftStart = ref('')
@@ -57,6 +73,11 @@ const logsError = ref('')
 let loadGen = 0
 let trendController: AbortController | null = null
 let logsController: AbortController | null = null
+
+const viewModes: { id: 'heatmap' | 'line'; labelKey: string }[] = [
+  { id: 'heatmap', labelKey: 'usage.viewHeatmap' },
+  { id: 'line', labelKey: 'usage.viewLine' },
+]
 
 const scales: { id: HeatmapScale; labelKey: string }[] = [
   { id: 'hour', labelKey: 'usage.scaleHour' },
@@ -290,6 +311,14 @@ const maxValue = computed(() => {
   return Math.max(0, ...values, 0)
 })
 
+/**
+ * Line-chart series derived from the same loaded points as the heatmap —
+ * metric switching is pure re-derivation, no new API calls.
+ */
+const trendSeries = computed(() =>
+  buildTrendSeries(points.value, metric.value),
+)
+
 
 onMounted(() => {
   resetToScaleDefault(scale.value)
@@ -338,6 +367,18 @@ onMounted(() => {
     </div>
 
     <div class="strip">
+      <div class="segmented" role="group" :aria-label="t('usage.viewLabel')">
+        <button
+          v-for="item in viewModes"
+          :key="item.id"
+          type="button"
+          class="segmented__btn"
+          :aria-pressed="viewMode === item.id"
+          @click="onViewMode(item.id)"
+        >
+          {{ t(item.labelKey) }}
+        </button>
+      </div>
       <div class="segmented" role="group" :aria-label="t('usage.scaleLabel')">
         <button
           v-for="item in scales"
@@ -383,8 +424,10 @@ onMounted(() => {
       </p>
 
       <template v-else>
-        <HeatmapGrid
+        <UsageTrendChart
           :scale="scale"
+          :series="trendSeries"
+          :metric="metric"
           :hour-cells="hourCells"
           :day-cells="dayCells"
           :month-cells="monthCells"
@@ -392,7 +435,7 @@ onMounted(() => {
           :month-labels="monthLabels"
           :weekday-labels="weekdayLabels"
           :max-value="maxValue"
-          :metric="metric"
+          :view-mode="viewMode"
           :translate="t"
         />
       </template>
