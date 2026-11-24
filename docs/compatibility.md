@@ -40,3 +40,19 @@
 ## 本次文档任务的验证边界
 
 Compose 文件已通过 YAML 解析与关键字段检查。宿主机未提供 Docker CLI，未执行 Docker 镜像构建、Compose 启动或容器只读运行验证；Podman 可用不等于已完成这些验证。Rust 源码在其他任务中持续更新，本任务不以中间编译结果声明测试通过；最终 mock 执行结果请结合发布时的测试输出记录。真实 Sub2API、身份提供商和支付沙箱均未在本任务中验证。
+
+
+## 双版本后端 CI 门槛（2026-11-24 新增）
+
+CI 的真实后端联动以 `sub2api-integration`（API 协议）与 `sub2api-browser`（生产前端浏览器）双矩阵运行，后端版本为：
+
+- `baseline-source`：固定提交 `2af3f1e15c98c893a89255a037f551046883b8c0` 源码构建；构建时以 `NODE_OPTIONS=--max-old-space-size=4096` 限定上游前端堆内存（此前 Actions 默认 2GB 出现 exit 134 OOM）。
+- `latest-image`：每轮解析 `docker.io/weishaw/sub2api:latest` 的 linux/amd64 digest，并以 `image@sha256:…` 启动，测试期间不回退到浮动标签。
+
+两组矩阵均通过 [scripts/sub2api-ci-upstream.mjs](scripts/sub2api-ci-upstream.mjs) 在独立 bridge 网络内启动 postgres:16 + redis:7 + Sub2API，不向宿主机发布数据库端口；管理员账号、JWT 密钥每次随机生成并集中脱敏。`configure` 命令通过真实管理 API 开放邮箱注册并读回校验；未证实的管理字段会直接失败，不做静默降级。
+
+每个联动任务经真实 Cshell 代理运行 [scripts/sub2api-integration.mjs](scripts/sub2api-integration.mjs)（未认证拒绝、登录、profile、refresh、权限隔离、Key 生命周期、用量空态、订阅/支付只读端点、未知订单拒绝）和 [scripts/sub2api-browser.mjs](scripts/sub2api-browser.mjs)（生产 `web/dist`：访客首页、登录、Key CRUD、资料修改、热力图、主题/语言持久化、管理员跳转上游、支付页不声明已支付、无横向溢出）。
+
+聚合 job `ci-required` 以 `always()` 汇总全部任务，任何失败/取消/跳过都会令 CI 失败；应将其稳定 check 配置为分支保护门槛（工作流本身不修改分支保护）。触发范围：PR、main push、每日定时与 `workflow_dispatch`。无 `continue-on-error`。
+
+本轮未涵盖：真实模型调用、邮件发送、Turnstile/Tencent/阿里云验证码供应商、支付渠道交易与 webhook 签名。这些仍需在真实部署/沙箱中单独验证；mock 支付成功场景仅属于本地 UI 验收，不代表真实兼容性。

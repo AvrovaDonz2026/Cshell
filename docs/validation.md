@@ -203,3 +203,14 @@ Final verification:
 - `git diff --check` passed. Preview rebuilt and healthy at `http://127.0.0.1:4284/` using explicit local fixture only.
 
 Real Sub2API/payment-provider execution remains outside this UI/mock acceptance. No commit or push was made.
+
+
+## Dual-version Sub2API CI gate — 2026-11-24
+
+Implemented (local verification scope):
+- `scripts/sub2api-ci-upstream.mjs` + `sub2api-ci-upstream.test.mjs`: baseline-source / latest-image harness (resolve|up|configure|down|manifest), digest-pinned latest image, isolated bridge network with postgres:16 + redis:7, bounded build memory for the upstream frontend OOM, central secret redaction. `node --test`: **4/4 passed**, including a real `podman manifest inspect` digest resolution for `weishaw/sub2api:latest` (linux/amd64).
+- `scripts/sub2api-integration.mjs`: extended strict real-proxy checks (unauth rejection, login envelope, profile identity, refresh, admin denial, key lifecycle incl. invalid quota, usage empty state, subscriptions/payment read-only endpoints, unknown-order rejection, logout). Syntax checked.
+- `scripts/sub2api-browser.mjs`: production web/dist browser suite against the real backend with strict error accounting and scrubbed artifacts. Syntax checked.
+- `.github/workflows/ci.yml`: dual matrix jobs (API + browser), binary/dist artifact reuse, daily schedule + workflow_dispatch, aggregate `ci-required` gate failing on any non-success dependency. Structural validation passed (no tabs, all jobs present, no continue-on-error).
+
+NOT executed locally: full container `up`/`configure` run (no Docker CLI on this host; Podman differs in the exact docker-CLI surface the harness uses) and therefore no local end-to-end API/browser run against a live upstream. Remote CI run for this change is also pending until it is pushed. These remain honestly unexecuted rather than claimed.
