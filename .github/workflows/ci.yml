@@ -282,7 +282,6 @@ jobs:
     env:
       SUB2API_TEST_EMAIL: cshell-ci-${{ github.run_id }}-${{ matrix.backend }}-browser@example.invalid
       SUB2API_TEST_PASSWORD: CshellCI-only-password-123
-      SUB2API_BROWSER_ARTIFACTS: ${{ runner.temp }}/browser-artifacts
     steps:
       - name: Checkout Cshell
         uses: actions/checkout@v4
@@ -341,6 +340,8 @@ jobs:
           exit 1
 
       - name: Run real-backend browser acceptance
+        env:
+          SUB2API_BROWSER_ARTIFACTS: ${{ runner.temp }}/browser-artifacts
         run: |
           set -euo pipefail
           CSHELL_BASE_URL=http://127.0.0.1:18080 \
