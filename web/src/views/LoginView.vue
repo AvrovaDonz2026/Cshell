@@ -18,6 +18,7 @@ const route = useRoute()
 
 const email = ref('')
 const password = ref('')
+const passwordVisible = ref(false)
 const error = ref('')
 const pending = ref(false)
 const captchaToken = ref('')
@@ -63,7 +64,7 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <AuthSplit :title="t('auth.loginTitle')">
+  <AuthSplit>
     <form class="auth-form" @submit.prevent="onSubmit">
       <h1 class="auth-form__title">{{ t('auth.loginTitle') }}</h1>
       <p class="auth-form__caption">{{ t('auth.loginCaption') }}</p>
@@ -91,7 +92,10 @@ async function onSubmit(): Promise<void> {
       </label>
       <label>
         <span>{{ t('auth.password') }}</span>
-        <Input v-model="password" class="auth-control" type="password" autocomplete="current-password" required />
+        <div class="password-field">
+          <Input v-model="password" class="auth-control" :type="passwordVisible ? 'text' : 'password'" autocomplete="current-password" required />
+          <button type="button" class="password-toggle" :aria-label="t(passwordVisible ? 'auth.hidePassword' : 'auth.showPassword')" :aria-pressed="passwordVisible" @click="passwordVisible = !passwordVisible">{{ t(passwordVisible ? 'auth.hidePassword' : 'auth.showPassword') }}</button>
+        </div>
       </label>
       <CaptchaField
         v-if="settings.captchaRequired && settings.captchaProvider"
@@ -110,9 +114,6 @@ async function onSubmit(): Promise<void> {
         :to="{ name: 'register' }"
       >
         {{ t('auth.toRegister') }}
-      </RouterLink>
-      <RouterLink class="auth-link" :to="{ name: 'email-verify' }">
-        {{ t('auth.toEmailVerify') }}
       </RouterLink>
     </form>
   </AuthSplit>
@@ -136,6 +137,9 @@ async function onSubmit(): Promise<void> {
   color: var(--cshell-text-muted);
 }
 
+.password-field { position: relative; }
+.password-field :deep(input) { padding-right: 5.5rem; }
+.password-toggle { position: absolute; inset-block: 0; right: 0.25rem; min-width: 44px; padding-inline: 0.5rem; border: 0; background: transparent; color: var(--cshell-accent); cursor: pointer; }
 .auth-form label {
   display: grid;
   gap: var(--cshell-space-2);

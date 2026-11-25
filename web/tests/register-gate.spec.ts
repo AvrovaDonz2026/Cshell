@@ -320,7 +320,8 @@ describe('login registration link', () => {
 
     // onMounted triggers loadPublic; the link appears only after it resolves.
     expect(wrapper.text()).toContain('Sign in')
-    expect(wrapper.text()).toContain('Verify email')
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.findAll('a').some((link) => link.attributes('href') === '/email-verify')).toBe(false)
 
     await settings.reload()
     await flushPromises()

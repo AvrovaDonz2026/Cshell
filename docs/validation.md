@@ -27,6 +27,10 @@ node scripts/proxy-smoke.mjs --binary target/debug/cshell --static-dir web/dist
 
 This starts a local Node HTTP fixture and the real Cshell binary on ephemeral loopback ports. It checks health, same-origin SPA/static delivery, representative auth/order/payment callback forwarding, request bytes and response headers. These are wire-level Rust proxy unit tests only: fixture callback acknowledgements do not establish payment, validate signatures, contact providers, or test browser behavior. `scripts/mock-sub2api.mjs` is also restricted to proxy protocol tests; it is not an acceptable UI functional backend.
 
+## Centered auth layout check
+
+`cd web && pnpm exec vitest run tests/auth-preferences.spec.ts` is a Playwright geometry check for `/login`, `/register`, and `/email-verify`. Its default target is `http://127.0.0.1:18080`, serving the production bundle through the real backend; it is not a Vite-dev-server test. It verifies one visible page heading, centered `.auth-content` no wider than 380px, non-overlapping right-side preferences and brand, and no horizontal overflow in English and Chinese at desktop/mobile widths plus a short landscape viewport. Locale changes use the app's custom listbox options. Set `AUTH_TEST_BASE_URL` only when intentionally targeting another real backend. The targeted Playwright run exercises the production bundle through the real backend.
+
 ## Real-backend browser gate
 
 CI runs `scripts/sub2api-browser.mjs` against the production bundle and real Sub2API, for both fixed source baseline `2af3f1e15c98c893a89255a037f551046883b8c0` and latest image pinned to its resolved digest. It fails closed on missing credentials, unavailable upstream, interactive captcha, non-loopback base URL, runtime/console/request/HTTP errors, and undeclared negative responses. CI separately runs `scripts/sub2api-integration.mjs` for real API contracts. See [compatibility.md](compatibility.md) for CI and historical evidence boundaries.
@@ -45,3 +49,9 @@ SUB2API_UPSTREAM_ID=<commit-or-image-digest> node scripts/sub2api-browser.mjs
 ```
 
 A prior full live local run of the real latest-image loop is recorded in the migration notes in this repository. It is prior evidence, not a claim that this interrupted migration reran containers or browser acceptance. CI results are pending until this work is pushed and workflow execution completes.
+
+## Auth header locale label alignment — 2026-11-25
+
+The compact auth-header language trigger now centers only the selected locale label; its listbox option labels remain start/left aligned and retain 44px hit targets. Verified against the refreshed real production bundle through Cshell at `127.0.0.1:18080`: selected `中文` computed `text-align:center`, both options computed `text-align:start`, option height 44px, theme control height 44px. The earlier computed-style check had loaded a stale server bundle; verification was repeated after `pnpm --dir web build` and browser reload.
+
+Frontend verification: `lint:check`, `typecheck`, **21 test files / 142 tests**, and `git diff --check` passed. The specific alignment is verified in the real browser; local state remains uncommitted.

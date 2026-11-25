@@ -5,7 +5,7 @@ import AuthSplit from '@/components/AuthSplit.vue'
 const { t } = useI18n()
 </script>
 <template>
-  <AuthSplit :title="t('auth.emailVerifyTitle')">
+  <AuthSplit>
     <div class="auth-card">
       <h1 class="auth-form__title">{{ t('auth.emailVerifyTitle') }}</h1>
       <p class="auth-form__caption" role="status">{{ t('auth.verifyRegistrationStep') }}</p>

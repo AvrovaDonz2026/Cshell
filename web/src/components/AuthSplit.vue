@@ -6,191 +6,84 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import { logoUrl } from '@/lib/assets'
 import { useThemeStore } from '@/stores/theme'
 
-withDefaults(
-  defineProps<{
-    title?: string
-  }>(),
-  { title: '' },
-)
-
 const { t } = useI18n()
 const theme = useThemeStore()
 </script>
 
 <template>
   <div class="cshell-user-workspace cshell-public auth-shell" :data-theme="theme.mode">
-    <aside class="auth-brand">
-      <RouterLink class="auth-brand__mark" :to="{ name: 'home' }">
-        <img class="auth-brand__logo" :src="logoUrl" width="36" height="36" alt="">
-        <span class="auth-brand__name">{{ t('brand.name') }}</span>
+    <header class="auth-header">
+      <RouterLink class="auth-header__brand" :to="{ name: 'home' }" :aria-label="t('brand.name')">
+        <img :src="logoUrl" width="30" height="30" alt="">
+        <span>{{ t('brand.name') }}</span>
       </RouterLink>
-
-      <div class="auth-brand__copy">
-        <h1 v-if="title" class="auth-brand__title">{{ title }}</h1>
-        <p class="auth-brand__lede">{{ t('auth.brandLede') }}</p>
-        <ul class="auth-brand__bullets">
-          <li>{{ t('auth.brandBulletUsage') }}</li>
-          <li>{{ t('auth.brandBulletKeys') }}</li>
-          <li>{{ t('auth.brandBulletBilling') }}</li>
-        </ul>
+      <div class="auth-header__prefs" aria-label="Preferences">
+        <ThemeToggle variant="header" />
+        <LocaleSwitcher variant="header" />
       </div>
+    </header>
 
-      <div class="auth-brand__foot">
-        <RouterLink class="auth-brand__link" :to="{ name: 'home' }">
-          {{ t('auth.backHome') }}
-        </RouterLink>
-      </div>
-    </aside>
-
-    <section class="auth-panel" :aria-label="title">
-      <div class="auth-panel__prefs">
-        <ThemeToggle />
-        <LocaleSwitcher />
-      </div>
-      <div class="auth-panel__form">
+    <main class="auth-main">
+      <section class="auth-content">
         <slot />
-      </div>
-    </section>
+      </section>
+    </main>
   </div>
 </template>
 
 <style scoped>
 .auth-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: var(--cshell-bg);
   color: var(--cshell-text);
 }
 
-.auth-brand {
-  display: none;
-}
-
-.auth-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cshell-space-4);
-  justify-content: center;
-  padding: var(--cshell-space-6);
-  min-width: 0;
-}
-
-.auth-panel__prefs {
+.auth-header {
+  width: min(100%, 80rem);
+  min-height: 4.25rem;
+  margin-inline: auto;
+  padding: 0 2rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
-.auth-panel__form {
+.auth-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.auth-header__brand img { border-radius: var(--cshell-radius-badge); object-fit: cover; }
+.auth-header__prefs { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.auth-main {
+  flex: 1;
   width: 100%;
-  max-width: var(--cshell-auth-width);
-  margin: 0 auto;
-  padding: 1.5rem;
-  border-radius: var(--cshell-radius-window);
-  background: var(--cshell-surface);
-  border: 1px solid var(--cshell-border);
-  box-shadow: var(--cshell-shadow);
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: clamp(3rem, 12vh, 7rem) 1.25rem 4rem;
+}
+
+.auth-content {
+  width: min(100%, 23.75rem);
   min-width: 0;
 }
 
-@media (min-width: 900px) {
-  .auth-shell {
-    grid-template-columns: minmax(18rem, 0.9fr) minmax(0, 1.1fr);
-  }
-
-  .auth-brand {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    padding: 2rem 2.5rem;
-    background: var(--cshell-sidebar);
-    border-right: 1px solid var(--cshell-border);
-    border-top-right-radius: var(--cshell-radius-window);
-    border-bottom-right-radius: var(--cshell-radius-window);
-    min-width: 0;
-  }
-
-  .auth-brand__mark {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .auth-brand__logo {
-    border-radius: var(--cshell-radius-badge);
-    object-fit: cover;
-  }
-
-  .auth-brand__name {
-    font-size: 1.15rem;
-    font-weight: 700;
-  }
-
-  .auth-brand__copy {
-    display: grid;
-    gap: 0.9rem;
-    margin: auto 0;
-    max-width: 26rem;
-  }
-
-  .auth-brand__title {
-    margin: 0;
-    font-size: var(--cshell-type-page);
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-  }
-
-  .auth-brand__lede {
-    margin: 0;
-    font-size: 0.92rem;
-    line-height: 1.6;
-    color: var(--cshell-text-muted);
-  }
-
-  .auth-brand__bullets {
-    margin: 0;
-    padding-left: 1.15rem;
-    display: grid;
-    gap: 0.45rem;
-    font-size: 0.88rem;
-    line-height: 1.5;
-    color: var(--cshell-text-muted);
-  }
-
-  .auth-brand__foot {
-    margin-top: auto;
-  }
-
-  .auth-brand__link {
-    font-size: 0.85rem;
-    color: var(--cshell-text-muted);
-    text-decoration: underline;
-  }
-
-  .auth-panel {
-    padding: 2.5rem 3rem;
-  }
-
-  .auth-panel__prefs {
-    padding-right: 0.25rem;
-  }
-
-  .auth-panel__form {
-    padding: 1.75rem;
-  }
+@media (max-width: 600px) {
+  .auth-header { min-height: 3.75rem; padding-inline: 1.25rem; }
+  .auth-main { padding: 2rem 1.25rem 3rem; }
 }
 
-@media (max-width: 480px) {
-  .auth-panel {
-    padding: 1rem;
-  }
-
-  .auth-panel__form {
-    padding: 1.15rem;
-  }
+@media (max-height: 650px) and (orientation: landscape) {
+  .auth-main { padding-block: 1rem 2rem; }
 }
 </style>
