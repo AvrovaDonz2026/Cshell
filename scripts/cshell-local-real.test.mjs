@@ -267,6 +267,7 @@ test('a live pid running the Cshell binary is not stale', () => {
     pid: 7,
     alive: () => true,
     argv: ['/home/donz/Cshell/target/debug/cshell'],
+    binaryPath: '/home/donz/Cshell/target/debug/cshell',
   });
   assert.equal(verdict.stale, false);
 });
