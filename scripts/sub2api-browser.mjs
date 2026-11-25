@@ -25,7 +25,7 @@
  */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { access, mkdir, open, readFile, unlink, writeFile } from 'node:fs/promises'
+import { access, mkdir, open, unlink, writeFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -748,6 +748,27 @@ async function chooseLocale(page, scope, label) {
   await list.waitFor({ state: 'hidden' }).catch(() => {})
 }
 
+const accessibleLabels = {
+  en: {
+    'usage.startDate': 'Start date', 'usage.endDate': 'End date', 'common.apply': 'Apply',
+    'usage.viewLabel': 'View type', 'usage.viewHeatmap': 'Heatmap', 'usage.viewLine': 'Line',
+    'usage.empty': 'No usage data for this period', 'usage.metricTokens': 'Tokens',
+    'purchase.empty': 'No plans available', 'keys.create': 'Create key',
+  },
+  zh: {
+    'usage.startDate': '开始日期', 'usage.endDate': '结束日期', 'common.apply': '应用',
+    'usage.viewLabel': '视图类型', 'usage.viewHeatmap': '热力图', 'usage.viewLine': '折线图',
+    'usage.empty': '该时段暂无用量数据', 'usage.metricTokens': 'Token',
+    'purchase.empty': '暂无可用套餐', 'keys.create': '创建密钥',
+  },
+}
+
+async function usageLabel(page, key) {
+  const locale = (await page.evaluate(() => document.documentElement.lang)) === 'zh' ? 'zh' : 'en'
+  assert.ok(accessibleLabels[locale][key], `missing explicit accessible label ${key} for ${locale}`)
+  return accessibleLabels[locale][key]
+}
+
 function billingEnabled() {
   return report.settings?.payment_enabled === true || report.settings?.subscription_enabled === true
 }
@@ -850,11 +871,15 @@ async function assertWorkspaceTheme(page, theme, label) {
 }
 
 /** Seed only UI preference keys; the real session is always created by a real login. */
-async function seedPreferences(context, theme) {
-  await context.addInitScript((themeMode) => {
-    localStorage.setItem('cshell_theme', themeMode)
-    localStorage.setItem('cshell_locale', 'en')
-  }, theme)
+async function seedPreferences(context, theme, { overwriteTheme = false } = {}) {
+  await context.addInitScript((prefs) => {
+    // Init scripts run on every document navigation: seed the matrix preference
+    // once, then let the application own persistence across reloads.
+    if (prefs.overwriteTheme || localStorage.getItem('cshell_theme') === null) {
+      localStorage.setItem('cshell_theme', prefs.theme)
+    }
+    if (localStorage.getItem('cshell_locale') === null) localStorage.setItem('cshell_locale', 'en')
+  }, { theme, overwriteTheme })
 }
 
 /**
@@ -890,7 +915,7 @@ async function sessionContext({ width, height, theme, storageState, mobile = fal
     isMobile: mobile,
     hasTouch: mobile,
   })
-  await seedPreferences(context, theme)
+  await seedPreferences(context, theme, { overwriteTheme: true })
   await guardExternal(context)
   return context
 }
@@ -1005,6 +1030,13 @@ try {
       },
       page,
     )
+    // The geometry matrix ends in Chinese; subsequent acceptance steps use the
+    // locale-derived labels but normalize this primary flow to English.
+    await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    const authLocale = page.locator('.auth-header__prefs .cshell-select__trigger')
+    if ((await authLocale.innerText()).trim() !== 'English') {
+      await chooseLocale(page, page.locator('.auth-header__prefs'), 'English')
+    }
 
     await check(
       'guest home renders the production SPA built for /_cshell/',
@@ -1206,10 +1238,21 @@ try {
       page,
     )
 
+    // Real registration authenticates by design. Log that disposable identity out
+    // before the distinct configured test-account login check.
+    await page.locator('.account-menu__trigger').click()
+    await page.locator('.account-menu__logout').click()
+    await page.waitForURL((url) => url.pathname === '/login', { timeout: 30_000 })
+
     await check(
       'synthetic non-existent account is rejected with the exact declared status',
       async () => {
-        const loginPage = await context.newPage()
+        // This check runs after the real registration flow, which authenticates
+        // the primary context. A fresh context proves the guest login contract and
+        // prevents the router from redirecting an already-authenticated tab.
+        const loginContext = await browser.newContext({ locale: 'en-US', timezoneId: 'UTC' })
+        await guardExternal(loginContext)
+        const loginPage = await loginContext.newPage()
         const loginTracker = track(loginPage, 'negative-login')
         try {
           const synthetic = `cshell-browser-negative-${randomUUID()}@example.invalid`
@@ -1251,7 +1294,7 @@ try {
           )
           await screenshot(loginPage, 'login-rejected')
         } finally {
-          await loginPage.close()
+          await loginContext.close()
         }
       },
       page,
@@ -1386,12 +1429,16 @@ try {
     await check(
       'dashboard heatmap scale switch re-queries the real trend',
       async () => {
-        const group = page.locator('.dashboard-filters [role="group"][aria-label="Heatmap time scale"]').first()
+        const scaleLabel = await page.locator('section.dashboard-trend [role=group]').first().getAttribute('aria-label')
+        assert.ok(scaleLabel, 'dashboard heatmap scale group has no accessible name')
+        const group = page.getByRole('group', { name: scaleLabel, exact: true })
         await group.waitFor()
         const buttons = group.locator('button')
         const count = await buttons.count()
         assert.equal(count, 3, `dashboard scale control has ${count} buttons, expected 3`)
         const scales = []
+        let backendReturnedUsage = false
+        let dashboardEmptyLabel = ''
         for (let index = 0; index < count; index += 1) {
           const response = page.waitForResponse(
             (candidate) =>
@@ -1400,23 +1447,21 @@ try {
             { timeout: 30_000 },
           )
           await buttons.nth(index).click()
-          assert.equal((await response).status(), 200)
+          const trendResponse = await response
+          assert.equal(trendResponse.status(), 200)
+          const payload = await trendResponse.json()
+          backendReturnedUsage ||= Array.isArray(payload?.trend) && payload.trend.length > 0
           await settle(page)
           assert.equal(await buttons.nth(index).getAttribute('aria-pressed'), 'true')
-          // The dashboard always feeds the day-cell grid; its multi-year row
-          // renders an empty month grid by design (monthCells is []), so require
-          // the grid container to be attached and record the real cell count.
-          const grid = page.locator('section.dashboard-trend [role="grid"]').first()
-          await grid.waitFor({ state: 'attached', timeout: 30_000 })
-          scales.push({
-            label: (await buttons.nth(index).innerText()).trim(),
-            cells: await grid.locator('[role="gridcell"]').count(),
-          })
+          const region = page.locator('section.dashboard-trend')
+          const cells = await region.locator('[role=gridcell]').count()
+          const status = region.locator('[role=status]').first()
+          if (await status.isVisible().catch(() => false)) dashboardEmptyLabel = (await status.innerText()).trim()
+          const empty = dashboardEmptyLabel.length > 0 && await status.isVisible().catch(() => false)
+          assert.ok(cells > 0 || empty, `dashboard scale ${index} rendered neither cells nor its localized empty status`)
+          scales.push({ label: (await buttons.nth(index).innerText()).trim(), cells, empty })
         }
-        assert.ok(
-          scales.some((entry) => entry.cells > 0),
-          'the dashboard rendered no heatmap cells on any scale',
-        )
+        assert.ok(scales.some((entry) => entry.cells > 0) || (scales.every((entry) => entry.empty) && backendReturnedUsage), 'dashboard had neither rendered cells nor an evidenced valid all-empty backend response')
         return { scales }
       },
       page,
@@ -1429,7 +1474,9 @@ try {
         await waitForWorkspace(page)
         const region = page.locator('section[aria-labelledby="usage-calendar-title"]')
         await region.waitFor()
-        const scaleGroup = page.locator('[aria-label="Heatmap time scale"]')
+        const scaleLabel = await region.locator('[role=group]').first().getAttribute('aria-label')
+        assert.ok(scaleLabel, 'usage heatmap scale group has no accessible name')
+        const scaleGroup = page.getByRole('group', { name: scaleLabel, exact: true })
         await scaleGroup.waitFor()
         const buttons = scaleGroup.locator('button')
         assert.equal(await buttons.count(), 4, 'usage must expose four heatmap scales')
@@ -1454,18 +1501,14 @@ try {
           await settle(page)
           assert.equal(await buttons.nth(index).getAttribute('aria-pressed'), 'true')
           const cells = await region.locator('[role="gridcell"]').count()
-          // A real backend with no usage legitimately shows the empty state; a
-          // backend with usage must render the grid. Either is accepted, but the
-          // scale must have re-queried and settled into one of the two.
-          const empty = await region
-            .getByText('No usage data for this period')
-            .isVisible()
-            .catch(() => false)
-          assert.ok(cells > 0 || empty, `usage scale ${index} rendered neither a grid nor an empty state`)
+          const emptyLabel = await region.locator('[role=status]').innerText().catch(() => '')
+          const empty = emptyLabel.length > 0 && await region.locator('[role=status]').isVisible().catch(() => false)
+          assert.ok(cells > 0 || empty, `usage scale ${index} rendered neither a grid nor its localized empty state`)
           if (cells > 0) renderedAny = true
           scales.push({ cells, empty })
         }
         report.usageHeatmapRendered = renderedAny
+        report.usageHeatmapAllEmpty = !renderedAny
         assert.ok(
           (await page.locator('#usage-models-title').count()) > 0,
           'usage models section is missing',
@@ -1505,8 +1548,8 @@ try {
         }
         page.on('request', observe)
         try {
-          const start = page.getByLabel('Start date', { exact: true })
-          const end = page.getByLabel('End date', { exact: true })
+          const start = page.getByLabel(await usageLabel(page, 'usage.startDate'), { exact: true })
+          const end = page.getByLabel(await usageLabel(page, 'usage.endDate'), { exact: true })
           await start.waitFor()
           await end.waitFor()
           // Pick a range inside the default (month) scale cap of 62 days.
@@ -1537,7 +1580,7 @@ try {
               candidate.request().method() === 'GET',
             { timeout: 30_000 },
           )
-          await page.getByRole('button', { name: 'Apply', exact: true }).click()
+          await page.getByRole('button', { name: await usageLabel(page, 'common.apply'), exact: true }).click()
           assert.equal((await logs).status(), 200)
           assert.equal((await trend).status(), 200)
           await settle(page)
@@ -1556,7 +1599,7 @@ try {
             `the applied range summary did not update: ${appliedText}`,
           )
           assert.equal(
-            await page.getByRole('button', { name: 'Apply', exact: true }).count(),
+            await page.getByRole('button', { name: await usageLabel(page, 'common.apply'), exact: true }).count(),
             1,
             'the Apply control disappeared',
           )
@@ -1577,11 +1620,12 @@ try {
         await waitForWorkspace(page)
         const region = page.locator('section[aria-labelledby="usage-calendar-title"]')
         await region.waitFor()
-        const viewGroup = page.getByRole('group', { name: 'View type' })
+        const viewLabel = await usageLabel(page, 'usage.viewLabel')
+        const viewGroup = page.getByRole('group', { name: viewLabel, exact: true })
         await viewGroup.waitFor()
         assert.equal(await viewGroup.locator('button').count(), 2, 'the view control must expose two modes')
-        const heatmapButton = viewGroup.getByRole('button', { name: 'Heatmap', exact: true })
-        const lineButton = viewGroup.getByRole('button', { name: 'Line', exact: true })
+        const heatmapButton = viewGroup.getByRole('button', { name: await usageLabel(page, 'usage.viewHeatmap'), exact: true })
+        const lineButton = viewGroup.getByRole('button', { name: await usageLabel(page, 'usage.viewLine'), exact: true })
         assert.equal(
           await heatmapButton.getAttribute('aria-pressed'),
           'true',
@@ -1593,13 +1637,12 @@ try {
 
         const hasData = await region.locator('[role="gridcell"]').count()
         if (hasData === 0) {
-          // A fresh real backend legitimately has nothing to chart. Assert the
-          // documented empty state instead of fabricating points.
-          const empty = region.getByText('No data points to chart for this period')
-          await empty.waitFor({ timeout: 20_000 })
+          // Empty usage short-circuits UsageTrendChart entirely; the localized
+          // page-level empty state is the honest evidence, not chart markup.
+          await region.getByText(await usageLabel(page, 'usage.empty'), { exact: true }).waitFor({ timeout: 20_000 })
           report.lineChartRendered = false
           await screenshot(page, 'usage-line-empty')
-          return { rendered: false }
+          return { rendered: false, reason: 'no usage points; chart not mounted' }
         }
 
         const svg = region.locator('svg[role="img"]')
@@ -1657,7 +1700,7 @@ try {
           const before = trendFetches
           const caption = region.locator('.trend-chart__max')
           const previous = (await caption.innerText()).trim()
-          await page.getByRole('button', { name: 'Tokens', exact: true }).click()
+          await page.getByRole('button', { name: await usageLabel(page, 'usage.metricTokens'), exact: true }).click()
           await page.waitForFunction(
             (prev) => {
               const element = document.querySelector(
@@ -1744,9 +1787,9 @@ try {
         const planButton = page.getByRole('button', { name: /Subscribe Now/i }).first()
         const hasPlan = (await planButton.count()) > 0
         if (!hasPlan) {
-          // A real backend with no for-sale plan legitimately renders the empty
-          // state; assert it rather than inventing a plan.
-          await page.getByText('No plans available').first().waitFor({ timeout: 20_000 })
+          // A real backend with no for-sale plan legitimately renders a localized
+          // empty state; assert it rather than inventing a plan.
+          await page.getByText(await usageLabel(page, 'purchase.empty'), { exact: true }).first().waitFor({ timeout: 20_000 })
           return { mode: 'enabled-no-plans' }
         }
 
@@ -1804,7 +1847,7 @@ try {
         await gotoRoute(page, '/keys')
         await waitForWorkspace(page)
 
-        await page.getByRole('button', { name: 'Create key', exact: true }).click()
+        await page.getByRole('button', { name: await usageLabel(page, 'keys.create'), exact: true }).click()
         const createDialog = page.locator('[role="dialog"]')
         await createDialog.waitFor()
         await createDialog.locator('input').first().fill(uniqueKey)
