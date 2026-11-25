@@ -229,6 +229,28 @@ function envelope(text, label) {
   return body.data
 }
 
+/** Abort any destination that is not the Cshell loopback origin. */
+async function guardExternal(context) {
+  await context.route('**/*', async (route) => {
+    let url
+    try {
+      url = new URL(route.request().url())
+    } catch {
+      await route.abort()
+      return
+    }
+    if (url.protocol === 'data:' || url.protocol === 'blob:') {
+      await route.continue()
+      return
+    }
+    if (url.origin !== baseOrigin) {
+      await route.abort()
+      return
+    }
+    await route.continue()
+  })
+}
+
 async function preflight() {
   let health
   try {
@@ -335,18 +357,34 @@ async function preflight() {
   // Learn the status a rejected login returns. A synthetic identity is used so the
   // real test account never consumes a lockout counter; the browser phase can then
   // declare a precise expected negative instead of guessing a status.
-  const synthetic = `cshell-browser-negative-${Date.now().toString(36)}@example.invalid`
+  const synthetic = `cshell-browser-negative-${randomUUID()}@example.invalid`
   const wrong = await request('/api/v1/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: synthetic, password: `not-the-password-${Date.now()}` }),
   })
-  assert.ok(
-    [400, 401, 403, 422].includes(wrong.response.status),
-    `a rejected login must return 400/401/403/422, got ${wrong.response.status}. ` +
-      'If this is 429 the deployment rate-limits login probes and the gate cannot declare ' +
-      'its one expected negative safely.',
-  )
+  const configuredNegativeStatus = process.env.SUB2API_NEGATIVE_LOGIN_STATUS
+  const validAuthRejections = [400, 401, 403, 422]
+  if (configuredNegativeStatus) {
+    const expectedStatus = Number(configuredNegativeStatus)
+    assert.ok(
+      validAuthRejections.includes(expectedStatus),
+      'SUB2API_NEGATIVE_LOGIN_STATUS must be one of 400, 401, 403 or 422',
+    )
+    assert.equal(
+      wrong.response.status,
+      expectedStatus,
+      'synthetic login rejection did not match SUB2API_NEGATIVE_LOGIN_STATUS',
+    )
+    report.wrongPasswordStatus = expectedStatus
+  } else {
+    assert.ok(
+      validAuthRejections.includes(wrong.response.status),
+      `a rejected login must return 400/401/403/422, got ${wrong.response.status}; ` +
+        'set SUB2API_NEGATIVE_LOGIN_STATUS only when the backend contract explicitly declares it.',
+    )
+    report.wrongPasswordStatus = wrong.response.status
+  }
   report.wrongPasswordStatus = wrong.response.status
   recordPreflight('rejected login status is observable', { status: wrong.response.status })
 }
@@ -883,28 +921,6 @@ try {
   browser = await chromium.launch(launchOptions)
   report.browser = `chromium ${browser.version()}`
 
-  /** Abort any destination that is not the Cshell loopback origin. */
-  const guardExternal = async (context) => {
-    await context.route('**/*', async (route) => {
-      let url
-      try {
-        url = new URL(route.request().url())
-      } catch {
-        await route.abort()
-        return
-      }
-      if (url.protocol === 'data:' || url.protocol === 'blob:') {
-        await route.continue()
-        return
-      }
-      if (url.origin !== baseOrigin) {
-        await route.abort()
-        return
-      }
-      await route.continue()
-    })
-  }
-
   /* ------------------------------------------------ desktop light user flow */
 
   {
@@ -1191,12 +1207,13 @@ try {
     )
 
     await check(
-      'wrong password is rejected with the exact declared status',
+      'synthetic non-existent account is rejected with the exact declared status',
       async () => {
         const loginPage = await context.newPage()
         const loginTracker = track(loginPage, 'negative-login')
         try {
-          const synthetic = `cshell-browser-negative-${Date.now().toString(36)}@example.invalid`
+          const synthetic = `cshell-browser-negative-${randomUUID()}@example.invalid`
+          await fillLogin(loginPage, synthetic, `wrong-${Date.now()}`)
           const expectation = expectNegative(loginTracker, {
             method: 'POST',
             pathname: '/api/v1/auth/login',
@@ -1204,7 +1221,6 @@ try {
             count: 1,
           })
           try {
-            await fillLogin(loginPage, synthetic, `wrong-${Date.now()}`)
             const response = loginPage.waitForResponse(
               (candidate) =>
                 new URL(candidate.url()).pathname === '/api/v1/auth/login' &&
