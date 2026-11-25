@@ -953,7 +953,7 @@ try {
                 const brand = document.querySelector('.auth-header__brand')
                 const prefs = document.querySelector('.auth-header__prefs')
                 const content = document.querySelector('.auth-content')
-                assert.ok(brand && prefs && content, 'auth layout landmarks are missing')
+                if (!brand || !prefs || !content) return { missingLandmarks: true }
                 const brandRect = brand.getBoundingClientRect()
                 const prefsRect = prefs.getBoundingClientRect()
                 const contentRect = content.getBoundingClientRect()
@@ -972,6 +972,7 @@ try {
                 }
               })
               const label = `${route} ${locale} at ${viewport.width}x${viewport.height}`
+              assert.notEqual(result.missingLandmarks, true, `${label}: auth layout landmarks are missing`)
               assert.equal(result.headingCount, 1, `${label}: expected one visible h1`)
               assert.ok(result.content.width > 0 && result.content.width <= 380, `${label}: content width ${result.content.width}`)
               assert.ok(Math.abs((result.content.left + result.content.right) / 2 - result.viewport / 2) <= 1, `${label}: content is not centered`)
