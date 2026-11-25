@@ -921,6 +921,75 @@ try {
     await guardExternal(context)
 
     await check(
+      'auth layout geometry across routes, locales and viewports',
+      async () => {
+        const routes = ['/login', '/register', '/email-verify']
+        const viewports = [
+          { width: 320, height: 900 },
+          { width: 390, height: 900 },
+          { width: 820, height: 900 },
+          { width: 1440, height: 900 },
+          { width: 844, height: 390 },
+        ]
+        const verified = []
+        for (const route of routes) {
+          for (const locale of ['en', 'zh']) {
+            await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+            await page.locator('.auth-content').waitFor()
+            for (const viewport of viewports) {
+              await page.setViewportSize(viewport)
+              const prefs = page.locator('.auth-header__prefs')
+              const trigger = prefs.locator('.cshell-select__trigger')
+              const expectedLabel = locale === 'en' ? 'English' : '中文'
+              if ((await trigger.innerText()).trim() !== expectedLabel) {
+                await trigger.click()
+                const options = page.locator('body > .cshell-select__list')
+                await options.waitFor()
+                await options.getByRole('option', { name: expectedLabel, exact: true }).click()
+                await options.waitFor({ state: 'hidden' })
+              }
+              assert.equal((await trigger.innerText()).trim(), expectedLabel, `${route} locale selector`)
+              const result = await page.evaluate(() => {
+                const brand = document.querySelector('.auth-header__brand')
+                const prefs = document.querySelector('.auth-header__prefs')
+                const content = document.querySelector('.auth-content')
+                assert.ok(brand && prefs && content, 'auth layout landmarks are missing')
+                const brandRect = brand.getBoundingClientRect()
+                const prefsRect = prefs.getBoundingClientRect()
+                const contentRect = content.getBoundingClientRect()
+                const headingCount = [...document.querySelectorAll('h1')].filter((heading) => {
+                  const style = getComputedStyle(heading)
+                  const rect = heading.getBoundingClientRect()
+                  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+                }).length
+                return {
+                  brand: { left: brandRect.left, right: brandRect.right, top: brandRect.top, bottom: brandRect.bottom },
+                  prefs: { left: prefsRect.left, right: prefsRect.right, top: prefsRect.top, bottom: prefsRect.bottom },
+                  content: { left: contentRect.left, right: contentRect.right, width: contentRect.width },
+                  headingCount,
+                  viewport: document.documentElement.clientWidth,
+                  scroll: document.documentElement.scrollWidth,
+                }
+              })
+              const label = `${route} ${locale} at ${viewport.width}x${viewport.height}`
+              assert.equal(result.headingCount, 1, `${label}: expected one visible h1`)
+              assert.ok(result.content.width > 0 && result.content.width <= 380, `${label}: content width ${result.content.width}`)
+              assert.ok(Math.abs((result.content.left + result.content.right) / 2 - result.viewport / 2) <= 1, `${label}: content is not centered`)
+              assert.ok(result.prefs.left >= result.brand.right, `${label}: preferences overlap brand horizontally`)
+              assert.ok(result.prefs.right <= result.viewport, `${label}: preferences exceed viewport`)
+              const overlaps = result.brand.left < result.prefs.right && result.prefs.left < result.brand.right && result.brand.top < result.prefs.bottom && result.prefs.top < result.brand.bottom
+              assert.equal(overlaps, false, `${label}: brand and preferences overlap`)
+              assert.ok(result.scroll <= result.viewport + 1, `${label}: horizontal overflow ${result.scroll} > ${result.viewport}`)
+              verified.push(label)
+            }
+          }
+        }
+        return { cases: verified.length, routes, locales: ['en', 'zh'], viewports }
+      },
+      page,
+    )
+
+    await check(
       'guest home renders the production SPA built for /_cshell/',
       async () => {
         await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 })

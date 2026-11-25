@@ -27,9 +27,11 @@ node scripts/proxy-smoke.mjs --binary target/debug/cshell --static-dir web/dist
 
 This starts a local Node HTTP fixture and the real Cshell binary on ephemeral loopback ports. It checks health, same-origin SPA/static delivery, representative auth/order/payment callback forwarding, request bytes and response headers. These are wire-level Rust proxy unit tests only: fixture callback acknowledgements do not establish payment, validate signatures, contact providers, or test browser behavior. `scripts/mock-sub2api.mjs` is also restricted to proxy protocol tests; it is not an acceptable UI functional backend.
 
-## Centered auth layout check
+## Auth layout geometry
 
-`cd web && pnpm exec vitest run tests/auth-preferences.spec.ts` is a Playwright geometry check for `/login`, `/register`, and `/email-verify`. Its default target is `http://127.0.0.1:18080`, serving the production bundle through the real backend; it is not a Vite-dev-server test. It verifies one visible page heading, centered `.auth-content` no wider than 380px, non-overlapping right-side preferences and brand, and no horizontal overflow in English and Chinese at desktop/mobile widths plus a short landscape viewport. Locale changes use the app's custom listbox options. Set `AUTH_TEST_BASE_URL` only when intentionally targeting another real backend. The targeted Playwright run exercises the production bundle through the real backend.
+Auth layout geometry is checked by `scripts/sub2api-browser.mjs` against the production bundle served by Cshell and a real Sub2API backend. The browser acceptance job runs the `/login`, `/register`, and `/email-verify` layout matrix in English and Chinese across desktop, tablet, narrow-phone, and short-landscape viewports for both backend variants. It asserts one visible heading, centered auth content no wider than 380px, a non-overlapping brand/preferences header, and no horizontal overflow. Locale changes use the production custom select.
+
+This is a presentation check performed in the real-backend browser acceptance run; it does not mock API routes or business responses. Vitest remains backend-independent. All functional/API/browser flows use real Sub2API; there is no auth geometry test that assumes a backend is already listening at `127.0.0.1:18080`.
 
 ## Real-backend browser gate
 
