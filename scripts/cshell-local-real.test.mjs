@@ -23,6 +23,7 @@ import {
   stalePidDetection,
   pidOwnsCshell,
   readPidArgv,
+  readPidExecutable,
 } from './cshell-local-real.mjs';
 import { containerNames, fixedContainerNames, validateHostPort, validateNamePrefix } from './sub2api-ci-upstream.mjs';
 
@@ -262,19 +263,29 @@ test('a live pid running something else is treated as reused', () => {
   assert.match(verdict.reason, /reused/);
 });
 
-test('a live pid running the Cshell binary is not stale', () => {
+test('a live pid running the Cshell binary is not stale when argv uses a different installed path', () => {
   const verdict = stalePidDetection({
     pid: 7,
     alive: () => true,
-    argv: ['/home/donz/Cshell/target/debug/cshell'],
-    binaryPath: '/home/donz/Cshell/target/debug/cshell',
+    argv: ['/usr/local/bin/cshell'],
+    executablePath: '/usr/local/bin/cshell',
+    binaryPath: '/usr/local/bin/cshell',
   });
   assert.equal(verdict.stale, false);
+});
+
+test('a live unrelated executable remains stale even if argv mentions the Cshell harness', () => {
+  const verdict = stalePidDetection({
+    pid: 8, alive: () => true, argv: ['/usr/bin/node', '/repo/scripts/cshell-local-real.mjs'],
+    executablePath: '/usr/bin/node', binaryPath: '/usr/local/bin/cshell',
+  });
+  assert.equal(verdict.stale, true);
 });
 
 test('pid ownership is decided by the exact executable, not a substring', () => {
   const binary = '/home/donz/Cshell/target/debug/cshell';
   assert.equal(pidOwnsCshell({ argv: [binary], binaryPath: binary }).owned, true);
+  assert.equal(pidOwnsCshell({ argv: ['/usr/local/bin/cshell'], executablePath: '/usr/local/bin/cshell', binaryPath: '/usr/local/bin/cshell' }).owned, true);
   // The bug this guards: a second CLI run has "cshell" in its argv but must never be
   // mistaken for the proxy process, or `stop` would kill an unrelated invocation.
   assert.equal(
@@ -290,6 +301,11 @@ test('pid ownership is decided by the exact executable, not a substring', () => 
 test('readPidArgv tolerates a missing or unreadable process', () => {
   assert.equal(readPidArgv(1, () => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }); }), null);
   assert.deepEqual(readPidArgv(1, () => '/a/b\u0000--flag\u0000'), ['/a/b', '--flag']);
+});
+
+test('readPidExecutable tolerates unavailable proc entries', () => {
+  assert.equal(readPidExecutable(1, () => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }); }), null);
+  assert.equal(readPidExecutable(1, () => '/usr/local/bin/cshell'), '/usr/local/bin/cshell');
 });
 
 test('isProcessAlive treats EPERM as alive and other errors as dead', () => {

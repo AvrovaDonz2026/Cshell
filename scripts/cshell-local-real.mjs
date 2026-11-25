@@ -18,7 +18,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
 import { chmod, mkdir, open, readFile, readdir, rename, stat } from 'node:fs/promises';
-import { readFileSync as fsReadFileSync } from 'node:fs';
+import { readFileSync as fsReadFileSync, readlinkSync as fsReadlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -135,11 +135,11 @@ export function isProcessAlive(pid, kill = process.kill) {
 }
 
 /** A recorded pid that is gone (or was recycled by an unrelated process) is stale. */
-export function stalePidDetection({ pid, alive = isProcessAlive, argv = null, binaryPath = CSHELL_BINARY } = {}) {
+export function stalePidDetection({ pid, alive = isProcessAlive, argv = null, executablePath = null, binaryPath = CSHELL_BINARY } = {}) {
   if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return { stale: true, reason: 'no pid recorded' };
   if (!alive(Number(pid))) return { stale: true, reason: `pid ${pid} is not running` };
   if (argv !== null) {
-    const ownership = pidOwnsCshell({ argv, binaryPath });
+    const ownership = pidOwnsCshell({ argv, executablePath, binaryPath });
     if (!ownership.owned) return { stale: true, reason: `pid ${pid} is alive but ${ownership.reason}` };
   }
   return { stale: false, reason: `pid ${pid} is alive and runs the Cshell binary` };
@@ -152,10 +152,10 @@ export function stalePidDetection({ pid, alive = isProcessAlive, argv = null, bi
  * invocation contains it too, and a recycled pid pointing at one would be killed by
  * `stop`. Only the exact executable path (or its resolved equivalent) counts.
  */
-export function pidOwnsCshell({ argv, binaryPath = CSHELL_BINARY } = {}) {
+export function pidOwnsCshell({ argv, executablePath = null, binaryPath = CSHELL_BINARY } = {}) {
   const args = Array.isArray(argv) ? argv.filter(value => typeof value === 'string') : [];
-  if (args.length === 0) return { owned: false, reason: 'cannot read the recorded pid command line' };
-  const executable = args[0];
+  const executable = executablePath || args[0];
+  if (typeof executable !== 'string' || executable.length === 0) return { owned: false, reason: 'cannot read the recorded pid executable' };
   const expected = path.resolve(binaryPath);
   const actual = path.resolve(executable);
   if (actual === expected) return { owned: true, reason: `pid runs ${expected}` };
@@ -164,6 +164,14 @@ export function pidOwnsCshell({ argv, binaryPath = CSHELL_BINARY } = {}) {
     return { owned: true, reason: `pid runs ${expected} (rebuilt on disk since launch)` };
   }
   return { owned: false, reason: `pid runs ${executable}, not ${expected} (pid was reused)` };
+}
+
+export function readPidExecutable(pid, readlinkSync = fsReadlinkSync) {
+  try {
+    return readlinkSync(`/proc/${pid}/exe`);
+  } catch {
+    return null;
+  }
 }
 
 export function readPidArgv(pid, readFileSync = fsReadFileSync) {
@@ -771,6 +779,7 @@ async function stopCshell(state, { ports }) {
   const ownership = stalePidDetection({
     pid,
     argv: readPidArgv(pid),
+    executablePath: readPidExecutable(pid),
   });
   if (ownership.stale) return { ...result, reason: ownership.reason };
 
@@ -986,7 +995,7 @@ async function commandStatus(env) {
   const upstreamOk = await upstreamHealthy(`http://${LOOPBACK}:${ports.upstream}/health`);
   const cshellOk = await cshellHealthy(url);
   const cshellPid = Number(state.cshell?.pid) || null;
-  const detection = cshellPid ? stalePidDetection({ pid: cshellPid, argv: readPidArgv(cshellPid) }) : { stale: true, reason: 'no pid recorded' };
+  const detection = cshellPid ? stalePidDetection({ pid: cshellPid, argv: readPidArgv(cshellPid), executablePath: readPidExecutable(cshellPid) }) : { stale: true, reason: 'no pid recorded' };
 
   let registrationEnabled = null;
   if (upstreamOk) {
