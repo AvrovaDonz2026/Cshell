@@ -751,13 +751,15 @@ async function chooseLocale(page, scope, label) {
 const accessibleLabels = {
   en: {
     'usage.startDate': 'Start date', 'usage.endDate': 'End date', 'common.apply': 'Apply',
-    'usage.viewLabel': 'View type', 'usage.viewHeatmap': 'Heatmap', 'usage.viewLine': 'Line',
+    'usage.viewLabel': 'View type', 'usage.scaleLabel': 'Heatmap time scale', 'usage.viewHeatmap': 'Heatmap', 'usage.viewLine': 'Line',
+    'usage.scaleHour': 'Hour', 'usage.scaleMonth': 'Month', 'usage.scaleYear': 'Year', 'usage.scaleMultiYear': 'Multi-year',
     'usage.empty': 'No usage data for this period', 'usage.metricTokens': 'Tokens',
     'purchase.empty': 'No plans available', 'keys.create': 'Create key',
   },
   zh: {
     'usage.startDate': '开始日期', 'usage.endDate': '结束日期', 'common.apply': '应用',
-    'usage.viewLabel': '视图类型', 'usage.viewHeatmap': '热力图', 'usage.viewLine': '折线图',
+    'usage.viewLabel': '视图类型', 'usage.scaleLabel': '热力图时间尺度', 'usage.viewHeatmap': '热力图', 'usage.viewLine': '折线图',
+    'usage.scaleHour': '小时', 'usage.scaleMonth': '月', 'usage.scaleYear': '年', 'usage.scaleMultiYear': '多年',
     'usage.empty': '该时段暂无用量数据', 'usage.metricTokens': 'Token',
     'purchase.empty': '暂无可用套餐', 'keys.create': '创建密钥',
   },
@@ -1429,13 +1431,15 @@ try {
     await check(
       'dashboard heatmap scale switch re-queries the real trend',
       async () => {
-        const scaleLabel = await page.locator('section.dashboard-trend [role=group]').first().getAttribute('aria-label')
-        assert.ok(scaleLabel, 'dashboard heatmap scale group has no accessible name')
-        const group = page.getByRole('group', { name: scaleLabel, exact: true })
+        const viewGroup = page.getByRole('group', { name: await usageLabel(page, 'usage.viewLabel'), exact: true })
+        await viewGroup.getByRole('button', { name: await usageLabel(page, 'usage.viewHeatmap'), exact: true }).click()
+        const group = page.getByRole('group', { name: await usageLabel(page, 'usage.scaleLabel'), exact: true })
         await group.waitFor()
         const buttons = group.locator('button')
         const count = await buttons.count()
-        assert.equal(count, 3, `dashboard scale control has ${count} buttons, expected 3`)
+        const expectedScales = ['Month', 'Year', 'Multi-year']
+        assert.equal(count, expectedScales.length, `dashboard scale control has ${count} buttons, expected ${expectedScales.join(', ')}`)
+        assert.deepEqual((await buttons.allInnerTexts()).map((label) => label.trim()), expectedScales)
         const scales = []
         let backendReturnedUsage = false
         let dashboardEmptyLabel = ''
@@ -1474,12 +1478,13 @@ try {
         await waitForWorkspace(page)
         const region = page.locator('section[aria-labelledby="usage-calendar-title"]')
         await region.waitFor()
-        const scaleLabel = await region.locator('[role=group]').first().getAttribute('aria-label')
-        assert.ok(scaleLabel, 'usage heatmap scale group has no accessible name')
-        const scaleGroup = page.getByRole('group', { name: scaleLabel, exact: true })
+        const viewGroup = page.getByRole('group', { name: await usageLabel(page, 'usage.viewLabel'), exact: true })
+        await viewGroup.getByRole('button', { name: await usageLabel(page, 'usage.viewHeatmap'), exact: true }).click()
+        const scaleGroup = page.getByRole('group', { name: await usageLabel(page, 'usage.scaleLabel'), exact: true })
         await scaleGroup.waitFor()
         const buttons = scaleGroup.locator('button')
         assert.equal(await buttons.count(), 4, 'usage must expose four heatmap scales')
+        assert.deepEqual((await buttons.allInnerTexts()).map((label) => label.trim()), ['Hour', 'Month', 'Year', 'Multi-year'])
         const scales = []
         let renderedAny = false
         for (let index = 0; index < 4; index += 1) {
