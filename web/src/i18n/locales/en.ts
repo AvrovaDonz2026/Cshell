@@ -41,6 +41,7 @@ export default {
       label: 'Language',
       en: 'English',
       zh: '中文',
+      ru: 'Русский',
     },
     menu: {
       open: 'Open navigation',
@@ -110,7 +111,7 @@ export default {
         'Sign in to manage usage, keys and billing — or create an account if registration is open.',
     },
     footer: {
-      localeNote: 'Interface available in English and Chinese; switch any time.',
+      localeNote: 'Interface available in English, Chinese and Russian; switch any time.',
       adminEntry: 'Administrator entry',
     },
   },

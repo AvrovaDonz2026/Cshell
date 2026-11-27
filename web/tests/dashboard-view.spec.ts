@@ -338,6 +338,26 @@ describe('DashboardView balance card', () => {
   })
 })
 
+describe('DashboardView initial requests', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('fetches stats independently and requests the initial trend once', async () => {
+    const fetchMock = stubFetch([
+      { match: (u) => u.includes('/usage/dashboard/stats'), data: statsData },
+      { match: (u) => u.includes('/usage/dashboard/trend'), data: { trend: [] } },
+    ])
+
+    await mountDashboard(createPinia())
+
+    const calls = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(calls.filter((url) => url.includes('/usage/dashboard/stats'))).toHaveLength(1)
+    expect(calls.filter((url) => url.includes('/usage/dashboard/trend'))).toHaveLength(1)
+  })
+})
+
 describe('DashboardView smoke', () => {
   beforeEach(() => {
     localStorage.clear()

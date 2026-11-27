@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{ variant?: 'default' | 'header' }>(), { 
 const localeLabels: Record<(typeof availableLocales)[number], string> = {
   en: 'shell.locale.en',
   zh: 'shell.locale.zh',
+  ru: 'shell.locale.ru',
 }
 
 const options = computed(() =>
@@ -22,7 +23,9 @@ const options = computed(() =>
 const model = computed({
   get: () => locale.value,
   set: (value: string) => {
-    if (value === 'en' || value === 'zh') setLocale(value)
+    if (availableLocales.includes(value as (typeof availableLocales)[number])) {
+      setLocale(value as (typeof availableLocales)[number])
+    }
   },
 })
 </script>

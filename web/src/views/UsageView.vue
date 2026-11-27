@@ -298,7 +298,7 @@ const monthCells = computed(() =>
 const weekCount = computed(() => weekCountForDays(dayCells.value))
 
 const monthLabels = computed(() =>
-  buildYearMonthLabels(dayCells.value, locale.value === 'zh' ? 'zh' : 'en'),
+  buildYearMonthLabels(dayCells.value, locale.value === 'ru' ? 'ru-RU' : locale.value === 'zh' ? 'zh' : 'en'),
 )
 
 const maxValue = computed(() => {

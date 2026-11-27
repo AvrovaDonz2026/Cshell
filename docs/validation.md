@@ -29,7 +29,7 @@ This starts a local Node HTTP fixture and the real Cshell binary on ephemeral lo
 
 ## Auth layout geometry
 
-Auth layout geometry is checked by `scripts/sub2api-browser.mjs` against the production bundle served by Cshell and a real Sub2API backend. The browser acceptance job runs the `/login`, `/register`, and `/email-verify` layout matrix in English and Chinese across desktop, tablet, narrow-phone, and short-landscape viewports for both backend variants. It asserts one visible heading, centered auth content no wider than 380px, a non-overlapping brand/preferences header, and no horizontal overflow. Locale changes use the production custom select.
+Auth layout geometry is checked by `scripts/sub2api-browser.mjs` against the production bundle served by Cshell and a real Sub2API backend. The browser acceptance job runs the `/login`, `/register`, and `/email-verify` layout matrix in English, Chinese and Russian across desktop, tablet, narrow-phone, and short-landscape viewports for both backend variants. It asserts one visible heading, centered auth content no wider than 380px, a non-overlapping brand/preferences header, and no horizontal overflow. Locale changes use the production custom select.
 
 This is a presentation check performed in the real-backend browser acceptance run; it does not mock API routes or business responses. Vitest remains backend-independent. All functional/API/browser flows use real Sub2API; there is no auth geometry test that assumes a backend is already listening at `127.0.0.1:18080`.
 
@@ -37,7 +37,7 @@ This is a presentation check performed in the real-backend browser acceptance ru
 
 CI runs `scripts/sub2api-browser.mjs` against the production bundle and real Sub2API, for both fixed source baseline `2af3f1e15c98c893a89255a037f551046883b8c0` and latest image pinned to its resolved digest. It fails closed on missing credentials, unavailable upstream, interactive captcha, non-loopback base URL, runtime/console/request/HTTP errors, and undeclared negative responses. CI separately runs `scripts/sub2api-integration.mjs` for real API contracts. See [compatibility.md](compatibility.md) for CI and historical evidence boundaries.
 
-The browser gate covers production asset serving/deep links, guest pages, real registered-account login, desktop light/dark and mobile Chinese UI, theme/locale persistence, section and drawer navigation, preference/settings gates, dialogs and focus/Escape hierarchy (including nested selects), real key create/edit/delete, Usage's four scales and applied filters, real empty-data states, profile update/revert, logout/protected redirects, admin redirect, and billing paths that never claim an unpaid order is paid. Only exact, declared negative responses are tolerated; stale same-origin usage GET cancellations are narrowly tolerated.
+The browser gate covers production asset serving/deep links, guest pages, real registered-account login, desktop light/dark and mobile localized UI, theme/locale persistence, section and drawer navigation, preference/settings gates, dialogs and focus/Escape hierarchy (including nested selects), real key create/edit/delete, Usage's four scales and applied filters, real empty-data states, profile update/revert, logout/protected redirects, admin redirect, and billing paths that never claim an unpaid order is paid. Only exact, declared negative responses are tolerated; stale same-origin usage GET cancellations are narrowly tolerated.
 
 Manual execution against a running local real loop:
 

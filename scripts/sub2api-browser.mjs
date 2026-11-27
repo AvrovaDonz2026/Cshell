@@ -757,6 +757,13 @@ const accessibleLabels = {
     'usage.empty': 'No usage data for this period', 'usage.metricTokens': 'Tokens',
     'purchase.empty': 'No plans available', 'keys.create': 'Create key',
   },
+  ru: {
+    'usage.startDate': 'Начальная дата', 'usage.endDate': 'Конечная дата', 'common.apply': 'Применить',
+    'usage.viewLabel': 'Тип представления', 'usage.scaleLabel': 'Масштаб времени тепловой карты', 'usage.viewHeatmap': 'Тепловая карта', 'usage.viewLine': 'Линейный график',
+    'usage.scaleHour': 'Час', 'usage.scaleMonth': 'Месяц', 'usage.scaleYear': 'Год', 'usage.scaleMultiYear': 'Несколько лет',
+    'usage.empty': 'За этот период данных об использовании нет', 'usage.metricTokens': 'Токены',
+    'purchase.empty': 'Доступных планов нет', 'keys.create': 'Создать ключ',
+  },
   zh: {
     'usage.startDate': '开始日期', 'usage.endDate': '结束日期', 'common.apply': '应用',
     'usage.viewLabel': '视图类型', 'usage.scaleLabel': '热力图时间尺度', 'usage.viewHeatmap': '热力图', 'usage.viewLine': '折线图',
@@ -768,7 +775,8 @@ const accessibleLabels = {
 }
 
 async function usageLabel(page, key) {
-  const locale = (await page.evaluate(() => document.documentElement.lang)) === 'zh' ? 'zh' : 'en'
+  const lang = await page.evaluate(() => document.documentElement.lang)
+  const locale = Object.hasOwn(accessibleLabels, lang) ? lang : 'en'
   assert.ok(accessibleLabels[locale][key], `missing explicit accessible label ${key} for ${locale}`)
   return accessibleLabels[locale][key]
 }
@@ -978,14 +986,14 @@ try {
         ]
         const verified = []
         for (const route of routes) {
-          for (const locale of ['en', 'zh']) {
+          for (const locale of ['en', 'zh', 'ru']) {
             await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
             await page.locator('.auth-content').waitFor()
             for (const viewport of viewports) {
               await page.setViewportSize(viewport)
               const prefs = page.locator('.auth-header__prefs')
               const trigger = prefs.locator('.cshell-select__trigger')
-              const expectedLabel = locale === 'en' ? 'English' : '中文'
+              const expectedLabel = { en: 'English', zh: '中文', ru: 'Русский' }[locale]
               if ((await trigger.innerText()).trim() !== expectedLabel) {
                 await trigger.click()
                 const options = page.locator('body > .cshell-select__list')
@@ -1030,7 +1038,7 @@ try {
             }
           }
         }
-        return { cases: verified.length, routes, locales: ['en', 'zh'], viewports }
+        return { cases: verified.length, routes, locales: ['en', 'zh', 'ru'], viewports }
       },
       page,
     )
@@ -2193,7 +2201,7 @@ try {
         const metrics = [await assertNoOverflow(page, 'mobile usage')]
         await screenshot(page, 'mobile-usage-zh-light')
 
-        for (const route of ['/dashboard', '/keys', '/profile']) {
+        for (const route of ['/keys', '/profile', '/dashboard']) {
           await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
           await waitForWorkspace(page)
           await settle(page)
@@ -2205,9 +2213,8 @@ try {
           0,
           'the mobile flow renders an error alert',
         )
-        await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' })
-        await waitForWorkspace(page)
-        await settle(page)
+        // The route loop ends on /dashboard; reload that page directly instead
+        // of navigating there a second time and triggering another trend fetch.
         await page.reload({ waitUntil: 'domcontentloaded' })
         await waitForWorkspace(page)
         await settle(page)

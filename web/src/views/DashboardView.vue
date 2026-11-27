@@ -47,7 +47,7 @@ let dashboardController: AbortController | null = null
 const dashboardMetric = 'requests' as const
 const dashboardCells = computed(() => buildHeatmapDays(dashboardPoints.value, dashboardStart.value, dashboardEnd.value, dashboardMetric))
 const dashboardWeeks = computed(() => weekCountForDays(dashboardCells.value))
-const dashboardLabels = computed(() => buildYearMonthLabels(dashboardCells.value, locale.value === 'zh' ? 'zh' : 'en'))
+const dashboardLabels = computed(() => buildYearMonthLabels(dashboardCells.value, locale.value === 'ru' ? 'ru-RU' : locale.value === 'zh' ? 'zh' : 'en'))
 const dashboardMax = computed(() => Math.max(0, ...dashboardCells.value.filter((cell) => cell.inRange).map((cell) => cell.value)))
 /** Line-chart series for the dashboard trend panel; derived from the loaded points. */
 const dashboardTrendSeries = computed(() => buildTrendSeries(dashboardPoints.value, dashboardMetric))

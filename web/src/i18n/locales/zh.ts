@@ -41,6 +41,7 @@ export default {
       label: '语言',
       en: 'English',
       zh: '中文',
+      ru: 'Русский',
     },
     menu: {
       open: '打开导航',
@@ -98,7 +99,7 @@ export default {
       body: '登录以管理用量、密钥与账单；若注册开放，也可直接创建账户。',
     },
     footer: {
-      localeNote: '界面支持中文与英文，可随时切换。',
+      localeNote: '界面支持中文、英文和俄文，可随时切换。',
       adminEntry: '管理员入口',
     },
   },
