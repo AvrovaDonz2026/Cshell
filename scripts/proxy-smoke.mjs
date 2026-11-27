@@ -13,10 +13,10 @@ function option(name, fallback) {
   return i < 0 ? fallback : args[i + 1];
 }
 const binary = resolve(option('--binary', 'target/debug/cshell'));
-const staticDirArg = option('--static-dir', 'frontend/dist');
+const staticDirArg = option('--static-dir', 'web/dist');
 const staticDir = resolve(staticDirArg);
 const temp = await mkdtemp(join(tmpdir(), 'cshell-smoke-'));
-const fixtureDir = join(temp, 'frontend');
+const fixtureDir = join(temp, 'web');
 await mkdir(fixtureDir);
 await writeFile(join(fixtureDir, 'index.html'), '<!doctype html><html><head><title>smoke-spa</title></head><body>cshell-spa</body></html>');
 await writeFile(join(fixtureDir, 'assets.js'), 'window.fixture = true;');

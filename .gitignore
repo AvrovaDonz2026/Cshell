@@ -1,8 +1,9 @@
 /target/
-/frontend/node_modules/
-/frontend/dist/
-/frontend/coverage/
-/frontend/.vite/
+/web/node_modules/
+/web/dist/
+/web/dist-preview/
+/web/coverage/
+/web/.vite/
 *.tsbuildinfo
 
 .env
@@ -16,3 +17,6 @@
 .vscode/
 
 /.vite/
+
+# Local real-backend loop state: generated credentials live here. Never commit.
+/artifacts/local-real/

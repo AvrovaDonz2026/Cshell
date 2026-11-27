@@ -1,0 +1,86 @@
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    type?: 'button' | 'submit' | 'reset'
+    variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+    size?: 'default' | 'auth'
+    disabled?: boolean
+    block?: boolean
+  }>(),
+  {
+    type: 'button',
+    variant: 'primary',
+    size: 'default',
+    disabled: false,
+    block: false,
+  },
+)
+</script>
+
+<template>
+  <button
+    class="cshell-btn"
+    :class="[`cshell-btn--${variant}`, `cshell-btn--${size}`, { 'cshell-btn--block': block }]"
+    :type="type"
+    :disabled="disabled"
+  >
+    <slot />
+  </button>
+</template>
+
+<style scoped>
+.cshell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--cshell-control-height, 44px);
+  padding: 0 var(--cshell-space-4, 1rem);
+  border-radius: var(--cshell-radius-control, 10px);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: var(--cshell-type-body, 0.9375rem);
+  line-height: 1.25;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+
+.cshell-btn--auth {
+  height: var(--cshell-control-height-auth, 56px);
+}
+
+.cshell-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cshell-btn--block {
+  width: 100%;
+}
+
+.cshell-btn--primary {
+  background: var(--cshell-accent, #a95e45);
+  color: #fffaf5;
+}
+
+.cshell-btn--primary:hover:not(:disabled) {
+  background: var(--cshell-accent-hover, #8f4d38);
+}
+
+.cshell-btn--secondary {
+  background: var(--cshell-surface, #fff9f0);
+  border-color: var(--cshell-border, #d9cbb8);
+  color: var(--cshell-text, #2c241c);
+}
+
+.cshell-btn--ghost {
+  background: transparent;
+  color: var(--cshell-text, #2c241c);
+}
+
+.cshell-btn--danger {
+  background: var(--cshell-danger, #9b3b2f);
+  color: #fff;
+}
+</style>

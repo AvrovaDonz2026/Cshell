@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Daily compatibility run against the floating latest image digest.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,13 +19,17 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-  PNPM_VERSION: 9.15.9
+  PNPM_VERSION: 10.11.0
   NODE_VERSION: 24
+  # Raised from the pinned upstream Dockerfile default of 1.5 GiB, which OOM-killed
+  # `pnpm run build` (exit 134) in GitHub run 45366350441. See docs/compatibility.md.
+  SUB2API_BUILD_NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
   rust:
     name: Rust checks and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,12 +52,32 @@ jobs:
       - name: Test
         run: cargo test --all-targets --all-features --locked
 
-  frontend:
-    name: Frontend checks and build
+      - name: Install Node for license gate
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Rust production dependency notices
+        run: node scripts/release-licenses.mjs rust
+
+      - name: Build debug binary for downstream jobs
+        run: cargo build --locked --bin cshell
+
+      - name: Upload Cshell binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cshell-binary
+          path: target/debug/cshell
+          retention-days: 7
+          if-no-files-found: error
+
+  web:
+    name: Web frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
-        working-directory: frontend
+        working-directory: web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,7 +92,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -75,32 +103,72 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Test
+        run: pnpm run test:run
+
       - name: Build
         run: pnpm run build
 
-  proxy-smoke:
-    name: Proxy smoke test
+      - name: Resolve runtime notices and verify release artifact
+        run: |
+          node ../scripts/release-licenses.mjs npm
+          node ../scripts/release-artifacts.mjs package
+          node ../scripts/release-artifacts.mjs check
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+          if-no-files-found: error
+
+  harness-tests:
+    name: Harness unit tests
     runs-on: ubuntu-latest
-    needs: [rust, frontend]
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.93.0
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Syntax check CI scripts
+        run: |
+          node --check scripts/sub2api-ci-upstream.mjs
+          node --check scripts/sub2api-integration.mjs
+          node --check scripts/cshell-local-real.mjs
 
-      - name: Build debug binary
-        run: cargo build --locked
+      - name: Unit-test harness helpers
+        run: |
+          node --test scripts/sub2api-ci-upstream.test.mjs
+          node --test scripts/cshell-local-real.test.mjs
+
+  proxy-smoke:
+    name: Proxy smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [rust, web]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Cshell binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cshell-binary
+          path: target/debug
+
+      - name: Restore executable bit
+        run: chmod +x target/debug/cshell
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Run proxy smoke test
         run: node scripts/proxy-smoke.mjs --binary target/debug/cshell
@@ -108,7 +176,8 @@ jobs:
   docker:
     name: Docker image build
     runs-on: ubuntu-latest
-    needs: [rust, frontend]
+    timeout-minutes: 30
+    needs: [rust, web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,6 +190,323 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: cshell:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Inspect image release contents without starting services
+        run: |
+          set -euo pipefail
+          cid=$(docker create cshell:ci)
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          docker export "$cid" -o "$RUNNER_TEMP/cshell-image.tar"
+          python3 scripts/release-image-check.py "$RUNNER_TEMP/cshell-image.tar"
+
+  sub2api-integration:
+    name: Sub2API integration (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [rust, web]
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [baseline-source, latest-image]
+    env:
+      SUB2API_MODE: ${{ matrix.backend }}
+      SUB2API_ADMIN_EMAIL: cshell-ci-admin-${{ github.run_id }}-${{ matrix.backend }}@example.invalid
+      SUB2API_ADMIN_PASSWORD: CshellCI-admin-only-password-123
+      SUB2API_TEST_EMAIL: cshell-ci-user-${{ github.run_id }}-${{ matrix.backend }}@example.invalid
+      SUB2API_TEST_PASSWORD: CshellCI-only-password-123
+      CI_REGISTRATION_ENABLED: 'true'
+    steps:
+      - name: Checkout Cshell
+        uses: actions/checkout@v4
+
+      - name: Set manifest path
+        run: echo "SUB2API_MANIFEST=$RUNNER_TEMP/sub2api-manifest.json" >> "$GITHUB_ENV"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Cshell binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cshell-binary
+          path: target/debug
+
+      - name: Restore executable bit
+        run: chmod +x target/debug/cshell
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Provision backend and configure it
+        run: |
+          set -euo pipefail
+          node scripts/sub2api-ci-upstream.mjs up --manifest "$SUB2API_MANIFEST" \
+            | tee "$RUNNER_TEMP/sub2api-up.json"
+          node scripts/sub2api-ci-upstream.mjs configure --manifest "$SUB2API_MANIFEST" \
+            | tee "$RUNNER_TEMP/sub2api-configure.json"
+
+      - name: Register the regular test user through the real backend
+        run: |
+          set -euo pipefail
+          upstream=$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8")).upstreamUrl)')
+          echo "upstream=$upstream"
+          UPSTREAM="$upstream" node --input-type=module -e '
+            const res = await fetch(process.env.UPSTREAM + "/api/v1/auth/register", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ email: process.env.SUB2API_TEST_EMAIL, password: process.env.SUB2API_TEST_PASSWORD }),
+            });
+            const body = await res.json().catch(() => null);
+            if (res.status >= 400 || body?.code !== 0) {
+              console.error("test user registration failed: HTTP " + res.status + " code " + body?.code);
+              process.exit(1);
+            }
+            console.log("test user registered: " + body.data.user.email);
+          '
+      - name: Start Cshell against the real backend
+        run: |
+          set -euo pipefail
+          upstream=$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8")).upstreamUrl)')
+          mkdir -p "$RUNNER_TEMP/empty-static"
+          SUB2API_UPSTREAM="$upstream" \
+            CSHELL_LISTEN=127.0.0.1:18080 \
+            CSHELL_STATIC_DIR="$RUNNER_TEMP/empty-static" \
+            target/debug/cshell >"$RUNNER_TEMP/cshell.log" 2>&1 &
+          echo "cshell_pid=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/_cshell/health >/dev/null; then
+              echo "Cshell is live"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/cshell.log"
+          exit 1
+
+      - name: Run real-upstream integration checks
+        run: |
+          set -euo pipefail
+          CSHELL_BASE_URL=http://127.0.0.1:18080 \
+          SUB2API_ADMIN_EMAIL="$SUB2API_ADMIN_EMAIL" \
+          SUB2API_ADMIN_PASSWORD="$SUB2API_ADMIN_PASSWORD" \
+            node scripts/sub2api-integration.mjs | tee "$RUNNER_TEMP/sub2api-integration.json"
+
+      - name: Collect sanitized diagnostics and tear down
+        if: always()
+        run: |
+          set +e
+          node scripts/sub2api-ci-upstream.mjs manifest --manifest "$SUB2API_MANIFEST" \
+            >"$RUNNER_TEMP/sub2api-manifest-final.json" 2>/dev/null
+          if [ -n "${cshell_pid:-}" ]; then
+            kill "$cshell_pid" 2>/dev/null
+          fi
+          sed -E 's/(PASSWORD|JWT_SECRET|REDIS_PASSWORD|DATABASE_PASSWORD)[=:][^ ]*/\1=[REDACTED]/g; s/sk-[A-Za-z0-9]{12,}/sk-[REDACTED]/g; s/rt_[A-Za-z0-9]{12,}/rt_[REDACTED]/g' \
+            "$RUNNER_TEMP/cshell.log" >"$RUNNER_TEMP/cshell-sanitized.log" 2>/dev/null
+          node scripts/sub2api-ci-upstream.mjs down --manifest "$SUB2API_MANIFEST" \
+            >"$RUNNER_TEMP/sub2api-down.json" 2>&1
+
+      - name: Upload manifest and sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sub2api-${{ matrix.backend }}-evidence
+          path: |
+            ${{ runner.temp }}/sub2api-manifest*.json
+            ${{ runner.temp }}/sub2api-up.json
+            ${{ runner.temp }}/sub2api-configure.json
+            ${{ runner.temp }}/sub2api-integration.json
+            ${{ runner.temp }}/sub2api-down.json
+            ${{ runner.temp }}/cshell-sanitized.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sub2api-browser:
+    name: Sub2API browser (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [rust, web]
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [baseline-source, latest-image]
+    env:
+      SUB2API_MODE: ${{ matrix.backend }}
+      SUB2API_ADMIN_EMAIL: cshell-ci-browser-admin-${{ github.run_id }}-${{ matrix.backend }}@example.invalid
+      SUB2API_ADMIN_PASSWORD: CshellCI-admin-only-password-123
+      SUB2API_TEST_EMAIL: cshell-ci-browser-${{ github.run_id }}-${{ matrix.backend }}@example.invalid
+      SUB2API_TEST_PASSWORD: CshellCI-only-password-123
+      CI_REGISTRATION_ENABLED: 'true'
+    steps:
+      - name: Checkout Cshell
+        uses: actions/checkout@v4
+
+      - name: Set manifest path
+        run: echo "SUB2API_MANIFEST=$RUNNER_TEMP/sub2api-manifest.json" >> "$GITHUB_ENV"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Download Cshell binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cshell-binary
+          path: target/debug
+
+      - name: Restore executable bit
+        run: chmod +x target/debug/cshell
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Verify browser harness is present
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/sub2api-browser.mjs ]; then
+            echo "::error::scripts/sub2api-browser.mjs is missing; the browser compatibility job cannot run."
+            echo "This job intentionally fails instead of skipping so the aggregate gate cannot pass without browser evidence."
+            exit 1
+          fi
+          node --check scripts/sub2api-browser.mjs
+
+      - name: Install browser dependencies
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Provision backend and configure it
+        run: |
+          set -euo pipefail
+          node scripts/sub2api-ci-upstream.mjs up --manifest "$SUB2API_MANIFEST" \
+            | tee "$RUNNER_TEMP/sub2api-up.json"
+          node scripts/sub2api-ci-upstream.mjs configure --manifest "$SUB2API_MANIFEST" \
+            | tee "$RUNNER_TEMP/sub2api-configure.json"
+          node --input-type=module -e 'import{readFileSync,appendFileSync}from"node:fs";const m=JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8"));appendFileSync(process.env.GITHUB_ENV,`SUB2API_UPSTREAM_ID=${m.imageReference || m.commit || "unknown"}\n`)'
+
+      - name: Register the browser test user through the real backend
+        run: |
+          set -euo pipefail
+          upstream=$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8")).upstreamUrl)')
+          UPSTREAM="$upstream" node --input-type=module -e '
+            const res = await fetch(process.env.UPSTREAM + "/api/v1/auth/register", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ email: process.env.SUB2API_TEST_EMAIL, password: process.env.SUB2API_TEST_PASSWORD }),
+            });
+            const body = await res.json().catch(() => null);
+            if (res.status >= 400 || body?.code !== 0) {
+              console.error("test user registration failed: HTTP " + res.status + " code " + body?.code);
+              process.exit(1);
+            }
+            console.log("test user registered");
+          '
+
+      - name: Start Cshell in front of the real backend with the production bundle
+        run: |
+          set -euo pipefail
+          upstream=$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(process.env.SUB2API_MANIFEST,"utf8")).upstreamUrl)')
+          SUB2API_UPSTREAM="$upstream" \
+            CSHELL_LISTEN=127.0.0.1:18080 \
+            CSHELL_STATIC_DIR="$GITHUB_WORKSPACE/web/dist" \
+            target/debug/cshell >"$RUNNER_TEMP/cshell-browser.log" 2>&1 &
+          echo "cshell_pid=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/_cshell/health >/dev/null; then
+              echo "Cshell is live"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/cshell-browser.log"
+          exit 1
+
+      - name: Run real-backend browser checks
+        run: |
+          set -euo pipefail
+          CSHELL_BASE_URL=http://127.0.0.1:18080 \
+          SUB2API_TEST_EMAIL="$SUB2API_TEST_EMAIL" \
+          SUB2API_TEST_PASSWORD="$SUB2API_TEST_PASSWORD" \
+          SUB2API_ADMIN_EMAIL="$SUB2API_ADMIN_EMAIL" \
+          SUB2API_ADMIN_PASSWORD="$SUB2API_ADMIN_PASSWORD" \
+          SUB2API_UPSTREAM_ID="$SUB2API_UPSTREAM_ID" \
+            node scripts/sub2api-browser.mjs | tee "$RUNNER_TEMP/sub2api-browser.json"
+
+      - name: Collect sanitized diagnostics and tear down
+        if: always()
+        run: |
+          set +e
+          node scripts/sub2api-ci-upstream.mjs manifest --manifest "$SUB2API_MANIFEST" \
+            >"$RUNNER_TEMP/sub2api-manifest-final.json" 2>/dev/null
+          if [ -n "${cshell_pid:-}" ]; then
+            kill "$cshell_pid" 2>/dev/null
+          fi
+          sed -E 's/(PASSWORD|JWT_SECRET|REDIS_PASSWORD|DATABASE_PASSWORD)[=:][^ ]*/\1=[REDACTED]/g; s/sk-[A-Za-z0-9]{12,}/sk-[REDACTED]/g; s/rt_[A-Za-z0-9]{12,}/rt_[REDACTED]/g' \
+            "$RUNNER_TEMP/cshell-browser.log" >"$RUNNER_TEMP/cshell-browser-sanitized.log" 2>/dev/null
+          node scripts/sub2api-ci-upstream.mjs down --manifest "$SUB2API_MANIFEST" \
+            >"$RUNNER_TEMP/sub2api-down.json" 2>&1
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sub2api-browser-${{ matrix.backend }}-evidence
+          path: |
+            ${{ runner.temp }}/sub2api-browser.json
+            ${{ runner.temp }}/sub2api-manifest*.json
+            ${{ runner.temp }}/sub2api-up.json
+            ${{ runner.temp }}/sub2api-configure.json
+            ${{ runner.temp }}/sub2api-down.json
+            ${{ runner.temp }}/cshell-browser-sanitized.log
+            ${{ github.workspace }}/artifacts/sub2api-browser
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ci-required:
+    name: CI required gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - rust
+      - web
+      - harness-tests
+      - proxy-smoke
+      - docker
+      - sub2api-integration
+      - sub2api-browser
+    steps:
+      - name: Verify every required job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            const needs = JSON.parse(process.env.NEEDS);
+            const problems = [];
+            for (const [name, info] of Object.entries(needs)) {
+              if (info.result !== "success") problems.push(name + "=" + info.result);
+            }
+            if (problems.length > 0) {
+              console.error("required checks did not succeed: " + problems.join(", "));
+              process.exit(1);
+            }
+            console.log("all required checks succeeded: " + Object.keys(needs).join(", "));
+          '

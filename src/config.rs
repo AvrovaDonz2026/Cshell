@@ -97,7 +97,7 @@ impl Config {
             .unwrap_or_else(|| "0.0.0.0:8080".into())
             .parse()
             .map_err(|_| ConfigError("CSHELL_LISTEN", "expected an IP socket address"))?;
-        let static_dir = lookup("CSHELL_STATIC_DIR")?.unwrap_or_else(|| "frontend/dist".into());
+        let static_dir = lookup("CSHELL_STATIC_DIR")?.unwrap_or_else(|| "web/dist".into());
         if static_dir.is_empty() {
             return Err(ConfigError("CSHELL_STATIC_DIR", "cannot be empty"));
         }

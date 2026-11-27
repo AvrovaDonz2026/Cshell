@@ -1,0 +1,9 @@
+{
+  "@vue/devtools-api@6.6.4": {
+    "file": "docs/licenses/vue-devtools-v6.6.4-LICENSE",
+    "url": "https://github.com/vuejs/devtools-v6/blob/v6.6.4/LICENSE",
+    "gitBlobSha": "de5fa77c8afb13ae0da0dd608c6f759c32ab1985",
+    "sha256": "050bbca6960784db52ff387271bf2ecc5cbed7cf8581b415d528a6ecb6585015",
+    "reason": "npm archive declares MIT but omits license text; exact version repository tag license."
+  }
+}
